@@ -1,0 +1,2 @@
+API SCRIPT EXECUTED
+[{"stock": "COFORGE.NS", "last_price": 1669.2, "corr_close": -10.74, "corr_intraday": -11.56, "rsi": 41.74, "atr_pct": 2.76, "rr": 2.76, "signal": "Strong Buy", "probability": 70.0}, {"stock": "WELCORP.NS", "last_price": 750.35, "corr_close": -9.26, "corr_intraday": -9.59, "rsi": 40.99, "atr_pct": 3.25, "rr": 3.13, "signal": "Strong Buy", "probability": 70.0}]

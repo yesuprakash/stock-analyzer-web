@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Stock Analyzer Control</title>
+   <style>
+    body { font-family: Arial; }
+    #logBox {
+      width: 100%;
+      height: 300px;
+      margin-top: 10px;
+      white-space: pre-wrap;
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      background: #111;
+      color: #0f0;
+      padding: 10px;
+      overflow-y: scroll;
+      border: 1px solid #444;
+    }
+  </style>
+</head>
+<body>
+
+<h2>Stock Analyzer</h2>
+
+<button onclick="runAnalyzer()">Run Stock Analyzer</button>
+<button onclick="loadLog()">Refresh Log</button>
+<pre id="logBox">Logs will appear here...</pre>
+
+<script>
+const TOKEN = "LOCAL_STOCK_ANALYZER_RUN";
+
+function runAnalyzer() {
+  fetch(`run_analyzer.php?token=${TOKEN}`)
+    .then(res => res.text())
+    .then(msg => {
+      alert(msg);
+      setTimeout(loadLog, 1500); // auto-refresh after start
+    })
+    .catch(() => alert("Failed to start analyzer"));
+}
+
+function loadLog() {
+  fetch(`view_log.php?token=${TOKEN}`)
+    .then(res => res.text())
+    .then(text => {
+      const box = document.getElementById("logBox");
+      box.textContent = text;
+      box.scrollTop = box.scrollHeight;
+    })
+    .catch(err => {
+      document.getElementById("logBox").textContent =
+        "Failed to load log.";
+    });
+}
+</script>
+
+<script>
+function runAnalyzer() {
+  fetch('./run_analyzer.php?token=9f7c1d2a_StockAnalyzer_Run_2026!')
+    .then(res => res.text())
+    .then(msg => alert(msg))
+    .catch(err => alert('Failed to start analyzer'));
+}
+</script>
+
+</body>
+</html>

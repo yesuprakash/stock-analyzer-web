@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Market Correction Dashboard</title>
+
+  <style>
+    body {
+      font-family: Segoe UI, Arial, sans-serif;
+      padding: 16px;
+    }
+
+    h2 {
+      margin-bottom: 10px;
+    }
+
+    .filters {
+      display: flex;
+      gap: 14px;
+      align-items: center;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    label {
+      font-size: 14px;
+    }
+
+    input, select, button {
+      padding: 4px 6px;
+      font-size: 14px;
+    }
+
+    button {
+      cursor: pointer;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin-top: 10px;
+    }
+
+    th, td {
+      border: 1px solid #ccc;
+      padding: 6px 8px;
+      text-align: center;
+      font-size: 13px;
+    }
+
+    th {
+      background: #f4f4f4;
+    }
+
+    .positive { color: green; font-weight: 600; }
+    .negative { color: red; font-weight: 600; }
+    .neutral  { color: #444; }
+  </style>
+</head>
+
+<body>
+
+<h2>📉 Market Correction Dashboard</h2>
+
+<div class="filters">
+  <label>
+  <input type="checkbox" id="skip_filters">
+  Skip all filters
+</label>
+  <label>
+    Window:
+    <select id="window">
+      <option value="5">5</option>
+      <option value="10">10</option>
+      <option value="15">15</option>
+      <option value="30" selected>30</option>
+      <option value="45">45</option>
+      <option value="60">60</option>
+    </select>
+  </label>
+
+  <label>
+    Min Corr %:
+    <input type="number" id="min_corr" value="-8" step="0.5">
+  </label>
+
+  <label>
+    Max Corr %:
+    <input type="number" id="max_corr" value="-20" step="0.5">
+  </label>
+
+  <label>
+    RSI Min:
+    <input type="number" id="rsi" value="40" min="20" max="80">
+  </label>
+
+  <label>
+    Max ATR %:
+    <input type="number" id="atr" value="5.5" step="0.1">
+  </label>
+
+  <label>
+    Min R/R:
+    <input type="number" id="rr" value="1.8" step="0.1">
+  </label>
+
+  <button onclick="loadData()">Apply</button>
+</div>
+
+<table id="tbl">
+  <thead>
+    <tr>
+      <th>Stock</th>
+      <th>Last Price</th>
+      <th>Correction % (Close)</th>
+      <th>Correction % (Intraday)</th>
+      <th>RSI</th>
+      <th>ATR %</th>
+      <th>Reward / Risk</th>
+      <th>Signal</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="8">Loading...</td></tr>
+  </tbody>
+</table>
+
+<h3>📜 Execution Logs</h3>
+
+<button onclick="loadLogs()">🔄 Refresh Logs</button>
+
+<pre id="logBox"
+     style="
+        margin-top:10px;
+        max-height:300px;
+        overflow:auto;
+        background:#111;
+        color:#0f0;
+        padding:10px;
+        font-size:12px;
+        border-radius:4px;
+     ">
+Loading logs...
+</pre>
+
+<script>
+function loadData() {
+  const windowVal = document.getElementById("window").value;
+  const minCorr  = document.getElementById("min_corr").value;
+  const maxCorr  = document.getElementById("max_corr").value;
+  const rsiVal   = document.getElementById("rsi").value;
+  const atrVal   = document.getElementById("atr").value;
+  const rrVal    = document.getElementById("rr").value;
+  const skipAll  = document.getElementById("skip_filters").checked ? 1 : 0;
+
+  const tbody = document.querySelector("#tbl tbody");
+  tbody.innerHTML = "<tr><td colspan='8'>Loading...</td></tr>";
+
+  fetch(`/Stock_Analyzer/public_html/market_correction.php?window=${windowVal}` +
+      `&min_corr=${minCorr}` +
+      `&max_corr=${maxCorr}` +
+      `&rsi_min=${rsiVal}` +
+      `&max_atr=${atrVal}` +
+      `&min_rr=${rrVal}` +
+      `&skip_filters=${skipAll}`)
+    .then(res => {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then(data => {
+      tbody.innerHTML = "";
+
+      if (!data || data.length === 0) {
+        tbody.innerHTML = "<tr><td colspan='8'>No stocks qualify</td></tr>";
+        return;
+      }
+
+      data.forEach(r => {
+        const corrClass = r.corr_close < -15 ? "negative" : "neutral";
+        const signalClass =
+          r.signal.includes("Buy") ? "positive" :
+          r.signal.includes("Sell") ? "negative" : "neutral";
+
+        tbody.innerHTML += `
+          <tr>
+            <td>${r.stock}</td>
+            <td>${r.last_price}</td>
+            <td class="${corrClass}">${r.corr_close}%</td>
+            <td class="${corrClass}">${r.corr_intraday}%</td>
+            <td>${r.rsi}</td>
+            <td>${r.atr_pct}%</td>
+            <td>${r.rr}</td>
+            <td class="${signalClass}">${r.signal}</td>
+          </tr>`;
+      });
+    })
+    .catch(err => {
+      console.error(err);
+      tbody.innerHTML = "<tr><td colspan='8'>Error loading data</td></tr>";
+    });
+    
+}
+
+// Initial load
+//loadData();
+</script>
+
+<script>
+function loadLogs() {
+  fetch('/Stock_Analyzer/public_html/market_correction_logs.php')
+    .then(res => res.text())
+    .then(text => {
+      const box = document.getElementById("logBox");
+      box.textContent = text;
+      box.scrollTop = box.scrollHeight;
+    })
+    .catch(() => {
+      document.getElementById("logBox").textContent = "Failed to load logs";
+    });
+}
+
+// Auto-load once
+loadLogs();
+</script>
+
+</body>
+</html>

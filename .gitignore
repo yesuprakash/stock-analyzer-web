@@ -1,0 +1,21 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Logs
+logs/
+*.log
+
+# Env
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node / misc
+node_modules/
+
+# XAMPP temp
+*.pid
