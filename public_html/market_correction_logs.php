@@ -1,7 +1,7 @@
 <?php
 header('Content-Type: text/plain');
 
-$logFile = __DIR__ . '../../logs/market_correction_api.log';
+$logFile = realpath(__DIR__ . '/logs/market_correction_api.log');
 
 if (!file_exists($logFile)) {
     echo "Log file not found";

@@ -6,21 +6,21 @@ import sys
 import logging
 from datetime import datetime
 
-
-
 # -------------------------------------------------
-# PROJECT ROOT
+# PROJECT ROOT (DO NOT CHANGE)
 # -------------------------------------------------
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 
-# 🔥 THIS FIXES backend.* IMPORTS
+# 🔥 REQUIRED for backend imports
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
 
 # -------------------------------------------------
-# LOGGING
+# LOG LOCATION (PROD SAFE)
+# /home/user/public_html/logs
 # -------------------------------------------------
-LOG_DIR = os.path.join(BASE_DIR, "logs")
+PUBLIC_HTML = os.path.abspath(os.path.join(BASE_DIR, "public_html"))
+LOG_DIR = os.path.join(PUBLIC_HTML, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
 LOG_FILE = os.path.join(LOG_DIR, "market_correction_api.log")
@@ -28,32 +28,38 @@ LOG_FILE = os.path.join(LOG_DIR, "market_correction_api.log")
 # -------------------------------------------------
 # CLEAR OLD LOG ON EVERY RUN
 # -------------------------------------------------
-if os.path.exists(LOG_FILE):
-    open(LOG_FILE, "w").close()
+open(LOG_FILE, "w").close()
 
-logging.basicConfig(
-    filename=LOG_FILE,
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    force=True
-)
-
+# -------------------------------------------------
+# LOGGER (APACHE / SHARED HOSTING SAFE)
+# -------------------------------------------------
 logger = logging.getLogger("market_correction_api")
+logger.setLevel(logging.INFO)
 
-logger.info("==== RAW sys.argv DUMP START ====")
-logger.info(f"sys.argv (len={len(sys.argv)}): {sys.argv}")
-for idx, val in enumerate(sys.argv):
-    logger.info(f"argv[{idx}] = {repr(val)}")
-logger.info("==== RAW sys.argv DUMP END ====")
+if not logger.handlers:
+    fh = logging.FileHandler(LOG_FILE, mode="a", encoding="utf-8")
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(message)s"
+    )
+    fh.setFormatter(formatter)
+    logger.addHandler(fh)
 
+logger.propagate = False  # 🔥 CRITICAL
+logger.info(f"1.BASE_DIR: {BASE_DIR}")
+logger.info(f"1.PUBLIC_HTML: {PUBLIC_HTML}")
+logger.info(f"1.LOG_DIR: {LOG_DIR}")
+logger.info(f"1.LOG_FILE: {LOG_FILE}")
+# -------------------------------------------------
+# STARTUP LOGS
+# -------------------------------------------------
 logger.info("====================================")
 logger.info("SCRIPT LOADED")
 logger.info(f"Time: {datetime.now()}")
 logger.info(f"BASE_DIR: {BASE_DIR}")
 logger.info(f"CWD: {os.getcwd()}")
 logger.info(f"sys.path: {sys.path}")
+logger.info(f"sys.argv: {sys.argv}")
 logger.info("====================================")
-
 
 # -------------------------------------------------
 # ARG SAFETY
@@ -75,9 +81,11 @@ import json
 import pandas as pd
 import yfinance as yf
 from dotenv import load_dotenv
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
 
 # -------------------------------------------------
-# BACKEND IMPORTS (NOW 100% SAFE)
+# BACKEND IMPORTS (WORKING)
 # -------------------------------------------------
 from backend.db import get_connection
 from backend.market_utils import (
@@ -87,76 +95,14 @@ from backend.market_utils import (
     calc_macd_hist,
     calc_atr
 )
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning)
+
 # -------------------------------------------------
 # ENV
 # -------------------------------------------------
 load_dotenv(os.path.join(BASE_DIR, ".env"), override=True)
 
-
-
 # -------------------------------------------------
-# SAFETY
-# -------------------------------------------------
-def safe_float(x):
-    try:
-        if x is None:
-            return None
-        if isinstance(x, (pd.Series, pd.DataFrame)):
-            x = x.iloc[-1]
-        return float(x)
-    except Exception:
-        return None
-
-# -------------------------------------------------
-# PRICE FETCH
-# -------------------------------------------------
-def fetch_price_df(symbol, period="120d"):
-    try:
-        df = yf.download(symbol, period=period, progress=False, auto_adjust=True)
-        if df is None or df.empty:
-            return pd.DataFrame()
-        df.index = pd.to_datetime(df.index).normalize()
-        return df
-    except Exception:
-        return pd.DataFrame()
-
-# -------------------------------------------------
-# INDICATORS (unchanged)
-# -------------------------------------------------
-def calc_rsi(close, period=14):
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.ewm(alpha=1/period, adjust=False).mean()
-    avg_loss = loss.ewm(alpha=1/period, adjust=False).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
-def calc_macd_hist(close):
-    ema12 = close.ewm(span=12, adjust=False).mean()
-    ema26 = close.ewm(span=26, adjust=False).mean()
-    macd = ema12 - ema26
-    signal = macd.ewm(span=9, adjust=False).mean()
-    return macd - signal
-
-def calc_atr(df, period=14):
-    high = df['High']
-    low = df['Low']
-    close = df['Close']
-    prev_close = close.shift(1)
-
-    tr = pd.concat([
-        (high - low).abs(),
-        (high - prev_close).abs(),
-        (low - prev_close).abs()
-    ], axis=1).max(axis=1)
-
-    return tr.ewm(alpha=1/period, adjust=False).mean()
-
-# -------------------------------------------------
-# DB FETCH (same query)
+# DB FETCH
 # -------------------------------------------------
 def fetch_latest_predictions():
     conn = get_connection()
@@ -174,31 +120,36 @@ def fetch_latest_predictions():
     return df.groupby("stock_symbol", as_index=False).first()
 
 # -------------------------------------------------
-# MAIN (replaces Streamlit)
+# MAIN
 # -------------------------------------------------
 def main():
     logger.info("Entered main()")
+
     skip_filters = False
     if len(sys.argv) >= 8:
         skip_filters = int(sys.argv[7]) == 1
 
     logger.info(f"Skip filters = {skip_filters}")
-    # args from PHP
+
     correction_window = int(sys.argv[1])
     min_corr = float(sys.argv[2])
     max_corr = float(sys.argv[3])
     rsi_min = float(sys.argv[4])
     max_atr_pct = float(sys.argv[5])
     min_rr = float(sys.argv[6])
+
     logger.info(
-    f"Params → window={correction_window}, min_corr={min_corr}, "
-    f"max_corr={max_corr}, rsi_min={rsi_min}, max_atr={max_atr_pct}, min_rr={min_rr}, skip_filters={skip_filters}"
-)
+        f"Params → window={correction_window}, min_corr={min_corr}, "
+        f"max_corr={max_corr}, rsi_min={rsi_min}, "
+        f"max_atr={max_atr_pct}, min_rr={min_rr}"
+    )
+
     preds = fetch_latest_predictions()
     rows = []
 
     for r in preds.itertuples(index=False):
         logger.info(f"Processing {r.stock_symbol}")
+
         df = fetch_price_df(r.stock_symbol)
         if df.empty or len(df) < correction_window:
             logger.info(f"{r.stock_symbol} skipped: insufficient price data")
@@ -216,45 +167,35 @@ def main():
 
         corr_close = ((last_price - high_close) / high_close) * 100
         corr_intraday = ((last_price - high_intraday) / high_intraday) * 100
-        if not skip_filters:
-            if not (max_corr <= corr_close <= min_corr):
-                continue
+
+        if not skip_filters and not (max_corr <= corr_close <= min_corr):
+            continue
 
         rsi_val = safe_float(calc_rsi(close).iloc[-1])
-        if not skip_filters:
-            if rsi_val is None or rsi_val < rsi_min:
-                logger.info(
-            f"{r.stock_symbol} skipped: rsi={rsi_val}"
-        )
-                continue
+        if not skip_filters and (rsi_val is None or rsi_val < rsi_min):
+            logger.info(f"{r.stock_symbol} skipped: rsi={rsi_val}")
+            continue
 
         macd_val = safe_float(calc_macd_hist(close).iloc[-1])
-        if not skip_filters:
-            if macd_val is None or macd_val < 0:
-                continue
+        if not skip_filters and (macd_val is None or macd_val < 0):
+            continue
 
         atr_val = safe_float(calc_atr(df).iloc[-1])
         if atr_val is None:
             continue
 
         atr_pct = (atr_val / last_price) * 100
-        if not skip_filters:
-            if atr_pct > max_atr_pct:
-                logger.info(
-            f"{r.stock_symbol} skipped: atr_pct={atr_pct:.2f}"
-        )
-                continue
+        if not skip_filters and atr_pct > max_atr_pct:
+            logger.info(f"{r.stock_symbol} skipped: atr_pct={atr_pct:.2f}")
+            continue
 
         if not (r.entry_price and r.target_price and r.stop_loss):
             continue
 
         rr = (r.target_price - r.entry_price) / (r.entry_price - r.stop_loss)
-        if not skip_filters:
-            if rr < min_rr:
-                logger.info(
-            f"{r.stock_symbol} skipped: rr={rr:.2f}"
-        )
-                continue
+        if not skip_filters and rr < min_rr:
+            logger.info(f"{r.stock_symbol} skipped: rr={rr:.2f}")
+            continue
 
         rows.append({
             "stock": r.stock_symbol,
@@ -271,6 +212,9 @@ def main():
     rows.sort(key=lambda x: (x["corr_close"], -x["rr"]))
     print(json.dumps(rows))
 
+# -------------------------------------------------
+# EXECUTION
+# -------------------------------------------------
 logger.info("About to call main()")
 
 if __name__ == "__main__":
