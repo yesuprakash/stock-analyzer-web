@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Near Entry Dashboard</title>
+
+<style>
+body {
+  font-family: Segoe UI, Arial, sans-serif;
+  padding: 16px;
+}
+
+h2 {
+  margin-bottom: 12px;
+}
+
+button {
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+table {
+  border-collapse: collapse;
+  width: 100%;
+  margin-top: 12px;
+}
+
+th, td {
+  border: 1px solid #ccc;
+  padding: 6px 8px;
+  font-size: 13px;
+  text-align: center;
+}
+
+th {
+  background: #f4f4f4;
+}
+
+.positive { color: green; font-weight: 600; }
+.negative { color: red; font-weight: 600; }
+.neutral  { color: #444; }
+
+.loading {
+  font-style: italic;
+  color: #777;
+}
+</style>
+</head>
+
+<body>
+
+<h2>🎯 Near Entry Screen</h2>
+
+<button onclick="loadNearEntry()">🔄 Refresh</button>
+
+<table id="tbl">
+  <thead>
+    <tr>
+      <th>Stock</th>
+      <th>Entry</th>
+      <th>Last Price</th>
+      <th>% Diff</th>
+      <th>RSI</th>
+      <th>Reward / Risk</th>
+      <th>Suggested Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td colspan="7" class="loading">Loading...11</td></tr>
+  </tbody>
+</table>
+
+<script>
+function loadNearEntry() {
+  const tbody = document.querySelector("#tbl tbody");
+  tbody.innerHTML = "<tr><td colspan='7' class='loading'>Loading...</td></tr>";
+
+  fetch("near_entry.php")
+    .then(res => {
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      return res.json();
+    })
+    .then(data => {
+      tbody.innerHTML = "";
+
+      if (!Array.isArray(data) || data.length === 0) {
+        tbody.innerHTML = "<tr><td colspan='7'>No near-entry candidates</td></tr>";
+        return;
+      }
+
+      data.forEach(r => {
+        let actionClass = "neutral";
+        if (r.suggested_action?.includes("ACTIONABLE")) actionClass = "positive";
+        if (r.suggested_action?.includes("SKIP")) actionClass = "negative";
+
+        tbody.innerHTML += `
+          <tr>
+            <td>${r.stock_symbol ?? "-"}</td>
+            <td>${r.entry_price ?? "-"}</td>
+            <td>${r.last_price ?? "-"}</td>
+            <td>${r.pct_diff !== undefined ? r.pct_diff.toFixed(2) + "%" : "-"}</td>
+            <td>${r.rsi ?? "-"}</td>
+            <td>${r.reward_risk ?? "-"}</td>
+            <td class="${actionClass}">
+              ${r.suggested_action ?? "-"}
+            </td>
+          </tr>
+        `;
+      });
+    })
+    .catch(err => {
+      console.error(err);
+      tbody.innerHTML = "<tr><td colspan='7'>Error loading data</td></tr>";
+    });
+}
+
+// Auto-load
+loadNearEntry();
+</script>
+
+</body>
+</html>

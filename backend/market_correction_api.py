@@ -23,7 +23,7 @@ PUBLIC_HTML = os.path.abspath(os.path.join(BASE_DIR, "public_html"))
 LOG_DIR = os.path.join(PUBLIC_HTML, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
-LOG_FILE = os.path.join(LOG_DIR, "market_correction_api.log")
+LOG_FILE = os.path.join(LOG_DIR, "near_entry_api.log")
 
 # -------------------------------------------------
 # CLEAR OLD LOG ON EVERY RUN
@@ -33,7 +33,7 @@ open(LOG_FILE, "w").close()
 # -------------------------------------------------
 # LOGGER (APACHE / SHARED HOSTING SAFE)
 # -------------------------------------------------
-logger = logging.getLogger("market_correction_api")
+logger = logging.getLogger("near_entry_api")
 logger.setLevel(logging.INFO)
 
 if not logger.handlers:
@@ -45,15 +45,12 @@ if not logger.handlers:
     logger.addHandler(fh)
 
 logger.propagate = False  # 🔥 CRITICAL
-logger.info(f"1.BASE_DIR: {BASE_DIR}")
-logger.info(f"1.PUBLIC_HTML: {PUBLIC_HTML}")
-logger.info(f"1.LOG_DIR: {LOG_DIR}")
-logger.info(f"1.LOG_FILE: {LOG_FILE}")
+
 # -------------------------------------------------
 # STARTUP LOGS
 # -------------------------------------------------
 logger.info("====================================")
-logger.info("SCRIPT LOADED")
+logger.info("NEAR ENTRY API LOADED")
 logger.info(f"Time: {datetime.now()}")
 logger.info(f"BASE_DIR: {BASE_DIR}")
 logger.info(f"CWD: {os.getcwd()}")
@@ -66,6 +63,7 @@ logger.info("====================================")
 # -------------------------------------------------
 if len(sys.argv) < 2:
     logger.info("No args, exiting early")
+    print("[]")
     sys.exit(0)
 
 # -------------------------------------------------
@@ -79,13 +77,14 @@ logger.info(f"Changed CWD to {BASE_DIR}")
 # -------------------------------------------------
 import json
 import pandas as pd
+import numpy as np
 import yfinance as yf
 from dotenv import load_dotenv
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 # -------------------------------------------------
-# BACKEND IMPORTS (WORKING)
+# BACKEND IMPORTS (SAME AS MARKET CORRECTION)
 # -------------------------------------------------
 from backend.db import get_connection
 from backend.market_utils import (
