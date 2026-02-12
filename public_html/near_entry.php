@@ -1,34 +1,23 @@
 <?php
-header('Content-Type: application/json');
-set_time_limit(0);
+header("Content-Type: application/json");
 
-// Python executable
-$python = '"C:\\xampp\\htdocs\\Stock_Analyzer\\venv\\Scripts\\python.exe"';
-// Python script
-$script = '"C:\\xampp\\htdocs\\Stock_Analyzer\\backend\\near_entry_api.py"';
+// 🔥 FULL PATH to python.exe (very important)
+$python = "C:\\xampp\\htdocs\\Stock_Analyzer\\venv\\Scripts\\python.exe";
 
-// (no params yet – we’ll add later)
-$cmd = "$python $script 2>&1";
+// 🔥 FULL PATH to api file
+$script = "C:\\xampp\\htdocs\\Stock_Analyzer\\near_entry_api.py";
 
-// Run Python
+// Build command
+$cmd = "\"$python\" \"$script\"";
+
+// Execute
 $output = shell_exec($cmd);
-$output = trim($output);
 
-// Always return valid JSON
-if ($output === '' || $output === null) {
-    echo json_encode([]);
+// If execution failed
+if ($output === null) {
+    echo json_encode(["error" => "Python execution failed"]);
     exit;
 }
 
-// If Python accidentally printed text, fail safely
-if ($output[0] !== '[' && $output[0] !== '{') {
-    echo json_encode([
-        "error" => "Invalid Python output",
-        "raw" => $output
-    ]);
-    exit;
-}
-
-// Normal case
+// Print JSON from Python
 echo $output;
-exit;
