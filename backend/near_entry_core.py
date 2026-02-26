@@ -3,6 +3,8 @@
 import os
 import sys
 from datetime import datetime
+from backend.logger import logger
+        
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -408,7 +410,7 @@ def run_near_entry_logic(config):
     rows = []
 
     for r in preds.itertuples(index=False):
-
+        logger.info(f"START processing stock: {r.stock_symbol}")
         pred_row = {
             "stock_symbol": r.stock_symbol,
             "prediction_date": r.prediction_date,

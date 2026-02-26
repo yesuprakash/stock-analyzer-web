@@ -53,6 +53,42 @@ th {
 <h2>🎯 Near Entry Screen</h2>
 
 <button onclick="loadNearEntry()">🔄 Refresh</button>
+<div class="filters">
+
+  <label>Max Prediction Age (days)</label>
+  <input type="number" id="max_age" value="3">
+
+  <label>Max % Distance From Entry</label>
+  <input type="number" id="pct_tol" step="0.1" value="2.0">
+
+  <label>RSI Min</label>
+  <input type="number" id="rsi_min" value="45">
+
+  <label>Min Reward/Risk</label>
+  <input type="number" id="min_rr" step="0.1" value="1.5">
+
+  <label>Max ATR %</label>
+  <input type="number" id="max_atr" step="0.1" value="5.0">
+
+  <label>
+    <input type="checkbox" id="use_rsi" checked> Use RSI
+  </label>
+
+  <label>
+    <input type="checkbox" id="use_ma" checked> Use MA
+  </label>
+
+  <label>
+    <input type="checkbox" id="use_macd" checked> Use MACD
+  </label>
+
+  <label>
+    <input type="checkbox" id="actionable_only"> Show Only Actionable
+  </label>
+
+  <button onclick="loadNearEntry()">Apply</button>
+
+</div>
 
 <table id="tbl">
   <thead>
@@ -72,48 +108,70 @@ th {
 </table>
 
 <script>
-function loadNearEntry() {
+
+function renderTable(data) {
+
   const tbody = document.querySelector("#tbl tbody");
-  tbody.innerHTML = "<tr><td colspan='7' class='loading'>Loading...</td></tr>";
+  tbody.innerHTML = "";
 
-  fetch("near_entry.php")
-    .then(res => {
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.json();
-    })
-    .then(data => {
-      tbody.innerHTML = "";
+  if (!data || data.length === 0) {
+    tbody.innerHTML = `<tr>
+        <td colspan="7" class="loading">No results found</td>
+      </tr>`;
+    return;
+  }
 
-      if (!Array.isArray(data) || data.length === 0) {
-        tbody.innerHTML = "<tr><td colspan='7'>No near-entry candidates</td></tr>";
-        return;
-      }
+  data.forEach(row => {
 
-      data.forEach(r => {
-        let actionClass = "neutral";
-        if (r.suggested_action?.includes("ACTIONABLE")) actionClass = "positive";
-        if (r.suggested_action?.includes("SKIP")) actionClass = "negative";
+    const pct = row.pct_diff !== null
+        ? row.pct_diff.toFixed(2)
+        : "-";
 
-        tbody.innerHTML += `
-          <tr>
-            <td>${r.stock_symbol ?? "-"}</td>
-            <td>${r.entry_price ?? "-"}</td>
-            <td>${r.last_price ?? "-"}</td>
-            <td>${r.pct_diff !== undefined ? r.pct_diff.toFixed(2) + "%" : "-"}</td>
-            <td>${r.rsi ?? "-"}</td>
-            <td>${r.reward_risk ?? "-"}</td>
-            <td class="${actionClass}">
-              ${r.suggested_action ?? "-"}
-            </td>
-          </tr>
-        `;
-      });
-    })
-    .catch(err => {
-      console.error(err);
-      tbody.innerHTML = "<tr><td colspan='7'>Error loading data</td></tr>";
-    });
+    const pctClass =
+        row.pct_diff > 0 ? "positive" :
+        row.pct_diff < 0 ? "negative" :
+        "neutral";
+
+    const tr = document.createElement("tr");
+
+    tr.innerHTML = `
+      <td>${row.stock_symbol}</td>
+      <td>${row.entry_price ?? "-"}</td>
+      <td>${row.last_price ?? "-"}</td>
+      <td class="${pctClass}">${pct}</td>
+      <td>${row.rsi ?? "-"}</td>
+      <td>${row.reward_risk ?? "-"}</td>
+      <td>${row.suggested_action ?? "-"}</td>
+    `;
+
+    tbody.appendChild(tr);
+  });
 }
+
+</script>
+
+<script>
+function loadNearEntry() {
+
+  const params = new URLSearchParams({
+    max_prediction_age_days: document.getElementById("max_age").value,
+    min_pct_tolerance: document.getElementById("pct_tol").value,
+    rsi_min: document.getElementById("rsi_min").value,
+    min_reward_risk: document.getElementById("min_rr").value,
+    max_atr_pct: document.getElementById("max_atr").value,
+
+    use_rsi: document.getElementById("use_rsi").checked ? 1 : 0,
+    use_ma: document.getElementById("use_ma").checked ? 1 : 0,
+    use_macd: document.getElementById("use_macd").checked ? 1 : 0,
+    actionable_only: document.getElementById("actionable_only").checked ? 1 : 0
+  });
+
+  fetch("near_entry.php?" + params.toString())
+    .then(res => res.json())
+    .then(renderTable)
+    .catch(err => console.error(err));
+}
+
 
 // Auto-load
 loadNearEntry();

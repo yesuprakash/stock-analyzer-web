@@ -1,23 +1,18 @@
 <?php
-header("Content-Type: application/json");
+header('Content-Type: application/json');
+set_time_limit(0);
 
-// 🔥 FULL PATH to python.exe (very important)
 $python = "C:\\xampp\\htdocs\\Stock_Analyzer\\venv\\Scripts\\python.exe";
-
-// 🔥 FULL PATH to api file
 $script = "C:\\xampp\\htdocs\\Stock_Analyzer\\near_entry_api.py";
 
-// Build command
-$cmd = "\"$python\" \"$script\"";
+$params = [];
 
-// Execute
-$output = shell_exec($cmd);
-
-// If execution failed
-if ($output === null) {
-    echo json_encode(["error" => "Python execution failed"]);
-    exit;
+foreach ($_GET as $key => $value) {
+    $params[] = $key . "=" . escapeshellarg($value);
 }
 
-// Print JSON from Python
+$cmd = "\"$python\" \"$script\" " . implode(" ", $params);
+
+$output = shell_exec($cmd);
+
 echo $output;

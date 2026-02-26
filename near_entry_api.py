@@ -1,7 +1,22 @@
 #!/usr/bin/env python
 
-import os
+import datetime
 import sys
+import os
+import traceback
+from backend.logger import logger
+
+def parse_args():
+    args = {}
+    for arg in sys.argv[1:]:
+        if "=" in arg:
+            k, v = arg.split("=", 1)
+            args[k] = v
+    return args
+
+ARGS = parse_args()
+
+
 import json
 from dotenv import load_dotenv
 
@@ -26,47 +41,50 @@ from backend.near_entry_core import run_near_entry_logic
 # -------------------------------------------------
 # HARD-CODE CONFIG (match Streamlit defaults)
 # -------------------------------------------------
-CONFIG = {
-    "latest_only": True,
-    "actionable_only": False,
-
-    "max_prediction_age_days": 3,
-    "min_pct_tolerance": 2.0,
+config = {
+    "max_prediction_age_days": int(ARGS.get("max_prediction_age_days", 3)),
+    "min_pct_tolerance": float(ARGS.get("min_pct_tolerance", 2.0)),
     "min_abs_tolerance": 0.0,
 
-    "rsi_period": 14,
-    "rsi_min": 45,
-    "use_rsi_filter": True,
-
+    "rsi_min": int(ARGS.get("rsi_min", 45)),
     "ma_period": 20,
-    "use_ma_filter": True,
+    "min_reward_risk": float(ARGS.get("min_reward_risk", 1.5)),
+    "max_atr_pct": float(ARGS.get("max_atr_pct", 5.0)),
 
-    "use_macd_filter": True,
-    "macd_hist_min": 0,
-
-    "use_volume_filter": True,
-    "min_volume_ratio": 1.2,
-
+    "use_rsi_filter": ARGS.get("use_rsi", "1") == "1",
+    "use_ma_filter": ARGS.get("use_ma", "1") == "1",
+    "use_macd_filter": ARGS.get("use_macd", "1") == "1",
     "use_rr_filter": True,
-    "min_reward_risk": 1.5,
-
     "use_gap_filter": True,
-    "max_gap_pct": 1.5,
-
+    "use_volume_filter": True,
     "use_volatility_filter": True,
-    "max_atr_pct": 5.0,
-    "atr_period": 14,
 
     "allowed_signals": ["Strong Buy", "Buy", "Bullish"],
 
-    "allow_short_on_reversal": False,
+    "period_for_history": "60d",
     "auto_adjust": False,
-    "period_for_history": "60d"
+    "latest_only": True,
+    "actionable_only": ARGS.get("actionable_only", "0") == "1"
 }
+
 
 # -------------------------------------------------
 # EXECUTE
 # -------------------------------------------------
 if __name__ == "__main__":
-    rows = run_near_entry_logic(CONFIG)
-    print(json.dumps(rows, default=str))
+    try:
+        logger.info("==== PYTHON START ==== " + datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        logger.info("ARGS: " + str(ARGS))
+
+        rows = run_near_entry_logic(config)
+
+        logger.info("Rows count: " + str(len(rows)))
+
+        print(json.dumps(rows, default=str))
+
+        logger.info("==== PYTHON END SUCCESS ====")
+
+    except Exception as e:
+        logger.error("ERROR OCCURRED")
+        logger.error(traceback.format_exc())
+        print(json.dumps({"error": str(e)}))
