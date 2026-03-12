@@ -183,6 +183,27 @@ def insert_prediction(row: pd.Series):
         if conn:
             conn.close()
 
+def delete_old_predictions():
+    conn = None
+    cursor = None
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+
+        cursor.execute("TRUNCATE TABLE predictions")
+
+        conn.commit()
+        logger.info("Old predictions deleted")
+
+    except Exception as e:
+        logger.exception(f"Delete old predictions failed: {e}")
+
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
 # -------------------------------
 # 4️⃣ Summary save (safer)
 # -------------------------------
@@ -209,6 +230,7 @@ def analyze_and_save_to_summary(df: pd.DataFrame):
 
         conn = get_connection()
         cursor = conn.cursor()
+        cursor.execute("DELETE FROM prediction_summary")
         inserted = 0
         for _, row in top_rows.iterrows():
             def sf(col):
@@ -477,6 +499,7 @@ def get_ticker_data_from_batch(batch_data, ticker):
 skipped_stocks = []
 end_date = datetime.now()
 start_date = end_date - timedelta(days=90)  # fetch slightly more window for smas/indicators
+delete_old_predictions()
 
 # Batch download attempt (faster & less likely to hit connection overhead)
 batch_data = batch_download_price_data(stocks, start_date, end_date)
@@ -607,7 +630,7 @@ for stock in stocks:
 
         # Append to main df
         rows.append(new_row.iloc[0].to_dict())
-
+       
         # DB insert (row0 Series)
         insert_prediction(new_row.iloc[0])
 
