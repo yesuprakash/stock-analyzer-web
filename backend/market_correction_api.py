@@ -50,7 +50,7 @@ logger.propagate = False  # 🔥 CRITICAL
 # STARTUP LOGS
 # -------------------------------------------------
 logger.info("====================================")
-logger.info("NEAR ENTRY API LOADED")
+logger.info("NEAR MARKET CORRECTION LOADED")
 logger.info(f"Time: {datetime.now()}")
 logger.info(f"BASE_DIR: {BASE_DIR}")
 logger.info(f"CWD: {os.getcwd()}")
