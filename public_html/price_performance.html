@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stock Performance Analyzer</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; padding: 16px; color: #222; }
+    .navbar { background: #2c3e50; overflow: hidden; margin: -16px -16px 18px; }
+    .navbar a { float: left; color: white; text-align: center; padding: 14px 18px; text-decoration: none; }
+    .navbar a:hover { background: #1abc9c; }
+    h2 { margin: 12px 0; }
+    .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 14px 0; }
+    label { display: grid; gap: 4px; font-size: 13px; }
+    select, button { padding: 7px 10px; font-size: 14px; }
+    button { cursor: pointer; }
+    #status { margin: 12px 0; color: #555; }
+    #errors { color: #9b1c1c; white-space: pre-wrap; }
+    .table-wrap { overflow: auto; max-height: 65vh; border: 1px solid #ccc; }
+    table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 1120px; }
+    th, td { border-bottom: 1px solid #ddd; padding: 7px 9px; text-align: right; white-space: nowrap; font-size: 13px; }
+    th { position: sticky; top: 0; background: #f3f5f6; z-index: 1; }
+    th:first-child, td:first-child { text-align: left; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover, tbody tr.selected { background: #eef8f6; }
+    .positive { color: #137333; font-weight: 600; }
+    .negative { color: #b3261e; font-weight: 600; }
+    .neutral { color: #444; }
+    .sparkline { display: block; width: 120px; height: 30px; }
+    th.rank-column { background: #fff0b3; }
+    td.rank-column { background: #fff9e6; }
+    th:first-child, td:first-child { position: sticky; left: 0; width: 46px; min-width: 46px; box-sizing: border-box; z-index: 2; background-clip: padding-box; }
+    th:nth-child(2), td:nth-child(2) { position: sticky; left: 46px; width: 116px; min-width: 116px; box-sizing: border-box; z-index: 2; background-clip: padding-box; }
+    th:first-child, th:nth-child(2) { z-index: 4; }
+    tbody td:first-child, tbody td:nth-child(2) { background-color: #fff; }
+    tbody tr:hover td:first-child, tbody tr:hover td:nth-child(2),
+    tbody tr.selected td:first-child, tbody tr.selected td:nth-child(2) { background-color: #eef8f6; }
+    .graph-cell { display: flex; align-items: center; gap: 6px; }
+    .details-button { padding: 4px 7px; font-size: 12px; }
+    #chart-panel { margin-top: 20px; border: 1px solid #ddd; padding: 12px; }
+    #detail-chart { width: 100%; height: 260px; }
+    .chart-label { fill: #555; font-size: 12px; }
+    .note { color: #666; font-size: 12px; }
+    dialog { width: min(1100px, 94vw); max-height: 90vh; border: 1px solid #aaa; border-radius: 6px; padding: 18px; }
+    dialog::backdrop { background: rgb(0 0 0 / 45%); }
+    .dialog-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    #expanded-chart { display: block; width: 100%; height: min(48vh, 440px); }
+    .expanded-chart-wrap { overflow-x: auto; }
+    .daily-table-wrap { max-height: 34vh; overflow: auto; }
+    #daily-prices { width: 100%; min-width: 360px; border-collapse: collapse; }
+    #daily-prices th { position: sticky; top: 0; background: #f3f5f6; }
+    #daily-prices th, #daily-prices td { text-align: right; }
+    #daily-prices th:first-child, #daily-prices td:first-child { text-align: left; }
+    @media (max-width: 700px) {
+      body { padding: 10px; }
+      .navbar { display: flex; overflow-x: auto; white-space: nowrap; margin: -10px -10px 14px; -webkit-overflow-scrolling: touch; }
+      .navbar a { float: none; flex: 0 0 auto; padding: 12px 13px; font-size: 14px; }
+      h2 { font-size: 20px; }
+      body > p { font-size: 13px; }
+      .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
+      .controls > button { min-height: 42px; }
+      .controls label { font-size: 12px; }
+      .controls select { width: 100%; min-width: 0; }
+      #status { font-size: 13px; }
+      .table-wrap { max-height: 60vh; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+      table { min-width: 1120px; }
+      th, td { padding: 8px 9px; font-size: 12px; }
+      th:first-child, td:first-child { left: 0; width: 42px; min-width: 42px; }
+      th:nth-child(2), td:nth-child(2) { left: 42px; width: 108px; min-width: 108px; }
+      .sparkline { width: 90px; }
+      .graph-cell { gap: 4px; }
+      .details-button { min-height: 34px; }
+      #chart-panel { margin-top: 12px; padding: 8px; }
+      .detail-chart-wrap { overflow-x: auto; }
+      #detail-chart { min-width: 640px; height: 220px; }
+      dialog { width: auto; max-width: none; max-height: 92vh; margin: auto 3vw; padding: 12px; }
+      .dialog-header { position: sticky; top: 0; background: white; z-index: 1; }
+      #expanded-chart { min-width: 760px; height: 300px; }
+      #daily-prices { min-width: 380px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="stockcaller.html">Stock Caller</a>
+    <a href="near_entry.html">Near Entry</a>
+    <a href="market_correction.html">Market Correction</a>
+    <a href="price_performance.html">Performance</a>
+    <a href="email_alerts.html">Email Alerts</a>
+    <a href="stock_master.html">Stock List</a>
+  </nav>
+
+  <h2>Stock Performance Analyzer</h2>
+  <p>Compare adjusted daily closing prices across the stock list. Prices are fetched from Yahoo Finance and cached privately once per day.</p>
+
+  <div class="controls">
+    <button id="analyze" type="button">Analyze / Load today's data</button>
+    <button id="force-refresh" type="button">Force fresh API refresh</button>
+    <label>Rank by
+      <select id="period">
+        <option value="1">1 trading session</option>
+        <option value="2">2 trading sessions</option>
+        <option value="3">3 trading sessions</option>
+        <option value="4">4 trading sessions</option>
+        <option value="5">5 trading sessions</option>
+        <option value="10">10 trading sessions</option>
+        <option value="15">15 trading sessions</option>
+        <option value="30">30 trading sessions</option>
+        <option value="45">45 trading sessions</option>
+        <option value="60">60 trading sessions</option>
+      </select>
+    </label>
+    <label>Trend sessions
+      <select id="trend-period">
+        <option value="1">1 trading session</option>
+        <option value="2">2 trading sessions</option>
+        <option value="3">3 trading sessions</option>
+        <option value="4">4 trading sessions</option>
+        <option value="5">5 trading sessions</option>
+        <option value="10">10 trading sessions</option>
+        <option value="15">15 trading sessions</option>
+        <option value="30">30 trading sessions</option>
+        <option value="45">45 trading sessions</option>
+        <option value="60" selected>60 trading sessions</option>
+      </select>
+    </label>
+  </div>
+
+  <div id="status" role="status">Click Analyze to load today's cached data or fetch missing prices.</div>
+  <div id="errors" role="alert"></div>
+  <p class="note">On mobile, swipe the table horizontally to view return periods; the Sl No and Stock columns stay in place.</p>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Sl No</th><th>Stock</th>
+          <th data-period="1">1-session</th><th data-period="2">2-session</th>
+          <th data-period="3">3-session</th><th data-period="4">4-session</th>
+          <th data-period="5">5-session</th><th data-period="10">10-session</th>
+          <th data-period="15">15-session</th><th data-period="30">30-session</th>
+          <th data-period="45">45-session</th><th data-period="60">60-session</th>
+          <th id="trend-heading">60-session trend</th>
+        </tr>
+      </thead>
+      <tbody id="results"><tr><td colspan="13">No analysis loaded.</td></tr></tbody>
+    </table>
+  </div>
+
+  <section id="chart-panel">
+    <strong id="chart-title">Select a stock row to view its price chart.</strong>
+    <div class="detail-chart-wrap">
+      <svg id="detail-chart" viewBox="0 0 900 260" role="img" aria-label="Selected stock adjusted close prices"></svg>
+    </div>
+    <div class="note">Returns compare the latest available daily adjusted close with the close N trading sessions earlier. Provider errors are shown per stock; failed refreshes use the last successfully cached data when available.</div>
+  </section>
+
+  <dialog id="price-details">
+    <div class="dialog-header">
+      <strong id="expanded-title">Price details</strong>
+      <button id="close-details" type="button">Close</button>
+    </div>
+    <div class="expanded-chart-wrap">
+      <svg id="expanded-chart" viewBox="0 0 1200 420" role="img" aria-label="Expanded daily adjusted close chart"></svg>
+    </div>
+    <h3>Daily prices and changes</h3>
+    <div class="daily-table-wrap">
+      <table id="daily-prices">
+        <thead><tr><th>Date</th><th>Adjusted close</th><th>Change vs previous session</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </dialog>
+
+  <script>
+    const apiUrl = "price_performance.php";
+    const periods = [1, 2, 3, 4, 5, 10, 15, 30, 45, 60];
+    const batchSize = 10;
+    const resultsBody = document.getElementById("results");
+    const statusBox = document.getElementById("status");
+    const errorBox = document.getElementById("errors");
+    const allRows = new Map();
+    let selectedSymbol = null;
+
+    function formatPercent(value) {
+      return value === null || value === undefined ? "—" : `${value > 0 ? "+" : ""}${Number(value).toFixed(2)}%`;
+    }
+
+    function percentClass(value) {
+      return value > 0 ? "positive" : value < 0 ? "negative" : "neutral";
+    }
+
+    function selectedTrendHistory(row) {
+      const count = Number(document.getElementById("trend-period").value);
+      return row.history.slice(-(count + 1));
+    }
+
+    function makeSparkline(row) {
+      const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      svg.setAttribute("viewBox", "0 0 120 30");
+      svg.setAttribute("class", "sparkline");
+      const history = selectedTrendHistory(row);
+      if (!history || history.length < 2) return svg;
+      const values = history.map(point => Number(point.close));
+      const low = Math.min(...values);
+      const span = Math.max(...values) - low || 1;
+      const points = values.map((value, index) =>
+        `${(index / (values.length - 1) * 118 + 1).toFixed(1)},${(27 - (value - low) / span * 24).toFixed(1)}`
+      ).join(" ");
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+      line.setAttribute("points", points);
+      line.setAttribute("fill", "none");
+      line.setAttribute("stroke", values.at(-1) >= values[0] ? "#137333" : "#b3261e");
+      line.setAttribute("stroke-width", "2");
+      svg.appendChild(line);
+      return svg;
+    }
+
+    function drawDetail(row) {
+      const svg = document.getElementById("detail-chart");
+      if (!row || !row.history || row.history.length < 2) {
+        svg.replaceChildren();
+        document.getElementById("chart-title").textContent = "No chart history available.";
+        return;
+      }
+
+      const history = selectedTrendHistory(row);
+      const trendPeriod = Number(document.getElementById("trend-period").value);
+      document.getElementById("chart-title").textContent =
+        `${row.symbol} — adjusted close, last ${trendPeriod} trading sessions (${history[0].date} to ${history.at(-1).date})`;
+      drawPriceChart(row, svg, 900, 260, history);
+    }
+
+    function drawPriceChart(row, svg, chartWidth, chartHeight, history) {
+      svg.replaceChildren();
+      const values = history.map(point => Number(point.close));
+      const low = Math.min(...values);
+      const high = Math.max(...values);
+      const span = high - low || 1;
+      const left = 58, right = 12, top = 14, bottom = 30;
+      const width = chartWidth - left - right, height = chartHeight - top - bottom;
+      const axisFont = chartWidth > 1000 ? "13" : "10";
+
+      for (let tick = 0; tick <= 4; tick++) {
+        const ratio = tick / 4;
+        const y = top + ratio * height;
+        const value = high - ratio * span;
+        const gridLine = document.createElementNS("http://www.w3.org/2000/svg", "line");
+        gridLine.setAttribute("x1", String(left));
+        gridLine.setAttribute("x2", String(chartWidth - right));
+        gridLine.setAttribute("y1", y.toFixed(1));
+        gridLine.setAttribute("y2", y.toFixed(1));
+        gridLine.setAttribute("stroke", "#e5e7eb");
+        gridLine.setAttribute("stroke-width", "1");
+        svg.appendChild(gridLine);
+
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", String(left - 7));
+        label.setAttribute("y", String(y + 4));
+        label.setAttribute("text-anchor", "end");
+        label.setAttribute("font-size", axisFont);
+        label.setAttribute("class", "chart-label");
+        label.textContent = value.toFixed(2);
+        svg.appendChild(label);
+      }
+
+      const points = values.map((value, index) => {
+        const x = left + index / (values.length - 1) * width;
+        const y = top + (high - value) / span * height;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      }).join(" ");
+
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+      line.setAttribute("points", points);
+      line.setAttribute("fill", "none");
+      line.setAttribute("stroke", values.at(-1) >= values[0] ? "#137333" : "#b3261e");
+      line.setAttribute("stroke-width", "2.5");
+      svg.appendChild(line);
+
+      values.forEach((value, index) => {
+        const x = left + index / (values.length - 1) * width;
+        const y = top + (high - value) / span * height;
+        const previous = values[index - 1];
+        const sessionChange = previous === undefined ? null : ((value / previous) - 1) * 100;
+        const totalChange = ((value / values[0]) - 1) * 100;
+        const point = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+        point.setAttribute("cx", x.toFixed(1));
+        point.setAttribute("cy", y.toFixed(1));
+        point.setAttribute("r", chartWidth > 1000 ? "3.5" : "2.2");
+        point.setAttribute("fill", value >= values[0] ? "#137333" : "#b3261e");
+        point.setAttribute("stroke", "white");
+        point.setAttribute("stroke-width", "1");
+        const title = document.createElementNS("http://www.w3.org/2000/svg", "title");
+        title.textContent = `${history[index].date} | Adjusted close: ${value.toFixed(2)}`
+          + ` | Session change: ${formatPercent(sessionChange)}`
+          + ` | Change from first date: ${formatPercent(totalChange)}`;
+        point.appendChild(title);
+        svg.appendChild(point);
+      });
+
+      const dateTickCount = Math.min(5, history.length);
+      for (let tick = 0; tick < dateTickCount; tick++) {
+        const index = Math.round(tick * (history.length - 1) / (dateTickCount - 1));
+        const x = left + index / (history.length - 1) * width;
+        const label = document.createElementNS("http://www.w3.org/2000/svg", "text");
+        label.setAttribute("x", String(x));
+        label.setAttribute("y", String(chartHeight - 6));
+        label.setAttribute("text-anchor", tick === 0 ? "start" : tick === dateTickCount - 1 ? "end" : "middle");
+        label.setAttribute("font-size", axisFont);
+        label.setAttribute("class", "chart-label");
+        label.textContent = history[index].date;
+        svg.appendChild(label);
+      }
+    }
+
+    function showPriceDetails(row) {
+      if (!row || row.error) return;
+      const history = selectedTrendHistory(row);
+      const trendPeriod = Number(document.getElementById("trend-period").value);
+      document.getElementById("expanded-title").textContent =
+        `${row.symbol} — ${trendPeriod} trading sessions (${history[0].date} to ${history.at(-1).date})`;
+      drawPriceChart(row, document.getElementById("expanded-chart"), 1200, 420, history);
+
+      const body = document.querySelector("#daily-prices tbody");
+      body.replaceChildren();
+      history.forEach((point, index) => {
+        const originalIndex = row.history.indexOf(point);
+        const previous = row.history[originalIndex - 1];
+        const change = previous
+          ? ((Number(point.close) / Number(previous.close)) - 1) * 100
+          : null;
+        const tr = document.createElement("tr");
+        [point.date, Number(point.close).toFixed(2), formatPercent(change)].forEach((value, cellIndex) => {
+          const td = document.createElement("td");
+          td.textContent = value;
+          if (cellIndex === 2) td.className = percentClass(change);
+          tr.appendChild(td);
+        });
+        body.appendChild(tr);
+      });
+
+      document.getElementById("price-details").showModal();
+    }
+
+    function renderTable() {
+      const period = document.getElementById("period").value;
+      document.querySelectorAll("th[data-period]").forEach(header => {
+        header.classList.toggle("rank-column", header.dataset.period === period);
+      });
+      const rows = [...allRows.values()].sort((a, b) => {
+        if (a.error || b.error) {
+          if (a.error && b.error) return a.symbol.localeCompare(b.symbol);
+          return a.error ? 1 : -1;
+        }
+        const aValue = a.performance[period];
+        const bValue = b.performance[period];
+        if (aValue === null) return bValue === null ? a.symbol.localeCompare(b.symbol) : 1;
+        if (bValue === null) return -1;
+        return aValue - bValue;
+      });
+
+      resultsBody.replaceChildren();
+      if (rows.length === 0) {
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 13;
+        td.textContent = allRows.size ? "No stocks match this filter." : "No analysis loaded.";
+        tr.appendChild(td);
+        resultsBody.appendChild(tr);
+        return;
+      }
+
+      document.getElementById("trend-heading").textContent =
+        `${document.getElementById("trend-period").value}-session trend`;
+      rows.forEach((row, index) => {
+        const tr = document.createElement("tr");
+        tr.classList.toggle("selected", row.symbol === selectedSymbol);
+        tr.addEventListener("click", () => {
+          selectedSymbol = row.symbol;
+          renderTable();
+          drawDetail(row);
+        });
+
+        const values = row.error
+          ? [String(index + 1), row.symbol, row.error, ...periods.slice(1).map(() => "—")]
+          : [
+              String(index + 1),
+              `${row.symbol}${row.stale ? " (cached)" : ""}`,
+              ...periods.map(days => formatPercent(row.performance[String(days)])),
+            ];
+        values.forEach((value, index) => {
+          const td = document.createElement("td");
+          td.textContent = value;
+          if (index >= 2 && periods[index - 2] === Number(period)) {
+            td.classList.add("rank-column");
+          }
+          if (!row.error && index >= 2) {
+            const pct = row.performance[String(periods[index - 2])];
+            td.classList.add(percentClass(pct));
+          }
+          tr.appendChild(td);
+        });
+
+        const sparkCell = document.createElement("td");
+        if (!row.error) {
+          const graphCell = document.createElement("div");
+          graphCell.className = "graph-cell";
+          graphCell.appendChild(makeSparkline(row));
+          const detailsButton = document.createElement("button");
+          detailsButton.type = "button";
+          detailsButton.className = "details-button";
+          detailsButton.textContent = "Expand";
+          detailsButton.setAttribute("aria-label", `Expand ${row.symbol} price graph and daily details`);
+          detailsButton.addEventListener("click", event => {
+            event.stopPropagation();
+            selectedSymbol = row.symbol;
+            renderTable();
+            drawDetail(row);
+            showPriceDetails(row);
+          });
+          graphCell.appendChild(detailsButton);
+          sparkCell.appendChild(graphCell);
+        }
+        tr.appendChild(sparkCell);
+        resultsBody.appendChild(tr);
+      });
+    }
+
+    async function analyze(forceRefresh = false) {
+      const button = document.getElementById(forceRefresh ? "force-refresh" : "analyze");
+      button.disabled = true;
+      document.getElementById(forceRefresh ? "analyze" : "force-refresh").disabled = true;
+      errorBox.textContent = "";
+      allRows.clear();
+      selectedSymbol = null;
+      renderTable();
+
+      try {
+        const infoResponse = await fetch(`${apiUrl}?action=stocks`);
+        if (!infoResponse.ok) throw new Error(`Could not load stock list (HTTP ${infoResponse.status}).`);
+        const info = await infoResponse.json();
+        const failures = [];
+
+        for (let offset = 0; offset < info.count; offset += batchSize) {
+          statusBox.textContent = `Analyzing stocks ${Math.min(offset + 1, info.count)}–${Math.min(offset + batchSize, info.count)} of ${info.count}…`;
+          const response = await fetch(
+            `${apiUrl}?action=analyze&offset=${offset}&limit=${batchSize}&force=${forceRefresh ? 1 : 0}`
+          );
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || `Analysis failed (HTTP ${response.status}).`);
+
+          for (const row of payload.rows) {
+            allRows.set(row.symbol, row);
+            if (row.error) failures.push(`${row.symbol}: ${row.error}`);
+            else if (row.provider_error) failures.push(`${row.symbol}: refresh failed; showing cached prices (${row.provider_error})`);
+          }
+          renderTable();
+          const selected = allRows.get(selectedSymbol);
+          if (selected) drawDetail(selected);
+          statusBox.textContent = `${allRows.size} of ${info.count} stocks processed; ${failures.length} price errors.`
+            + (forceRefresh ? " Forcing fresh API requests." : "");
+        }
+
+        errorBox.textContent = failures.length
+          ? `Some symbols could not be refreshed:\n${failures.join("\n")}`
+          : "";
+        const successfulRows = [...allRows.values()].filter(row => !row.error);
+        const staleCount = successfulRows.filter(row => row.stale).length;
+        const latestFetch = successfulRows.map(row => row.fetched_at).filter(Boolean).sort().at(-1);
+        statusBox.textContent = `${allRows.size} of ${info.count} stocks processed; ${staleCount} using older cached data. `
+          + `${forceRefresh ? "A fresh API refresh was requested." : "Today's cache was used."}`
+          + `${latestFetch ? ` Latest successful fetch ${latestFetch}.` : ""}`;
+      } catch (error) {
+        statusBox.textContent = "Analysis could not be completed.";
+        errorBox.textContent = error.message || "Unexpected error while loading price history.";
+      } finally {
+        document.getElementById("analyze").disabled = false;
+        document.getElementById("force-refresh").disabled = false;
+      }
+    }
+
+    document.getElementById("analyze").addEventListener("click", analyze);
+    document.getElementById("force-refresh").addEventListener("click", () => {
+      if (confirm("Force a fresh Yahoo Finance request for all 130 stocks? This bypasses today's cache and may use substantial API request quota.")) {
+        analyze(true);
+      }
+    });
+    document.getElementById("period").addEventListener("change", renderTable);
+    document.getElementById("trend-period").addEventListener("change", () => {
+      renderTable();
+      drawDetail(allRows.get(selectedSymbol));
+    });
+    document.getElementById("close-details").addEventListener("click", () => {
+      document.getElementById("price-details").close();
+    });
+  </script>
+</body>
+</html>

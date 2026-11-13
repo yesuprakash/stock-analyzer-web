@@ -11,6 +11,7 @@ import yfinance as yf
 from dotenv import load_dotenv
 
 from backend.db import get_connection
+from backend.stock_master import get_active_stock_symbols
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 load_dotenv(os.path.join(BASE_DIR, ".env"))
 
@@ -152,6 +153,13 @@ def calc_atr(df, period=14):
 # ---------------------------------------------------------
 
 def fetch_active_predictions(latest_only=True):
+    active_symbols = get_active_stock_symbols()
+    if not active_symbols:
+        return pd.DataFrame(columns=[
+            "stock_symbol", "prediction_date", "entry_price", "target_price",
+            "stop_loss", "trade_signal", "probability_success",
+        ])
+
     conn = get_connection()
 
     df = pd.read_sql("""
@@ -159,7 +167,8 @@ def fetch_active_predictions(latest_only=True):
                entry_price, target_price, stop_loss,
                trade_signal, probability_success
         FROM predictions
-    """, conn)
+        WHERE stock_symbol = ANY(%s)
+    """, conn, params=(active_symbols,))
 
     conn.close()
 
@@ -487,5 +496,4 @@ def run_near_entry_logic(config):
     )
 
     return rows
-
 

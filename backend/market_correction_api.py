@@ -79,6 +79,7 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
 
 from backend.db import get_connection
+from backend.stock_master import get_active_stock_symbols
 from backend.market_utils import (
     safe_float,
     fetch_price_df,
@@ -107,13 +108,21 @@ def clean_num(v):
 # DB FETCH
 # -------------------------------------------------
 def fetch_latest_predictions():
+    active_symbols = get_active_stock_symbols()
+    if not active_symbols:
+        return pd.DataFrame(columns=[
+            "stock_symbol", "entry_price", "target_price",
+            "stop_loss", "trade_signal", "probability_success",
+        ])
+
     conn = get_connection()
     df = pd.read_sql("""
         SELECT stock_symbol, entry_price, target_price,
                stop_loss, trade_signal, probability_success
         FROM predictions
+        WHERE stock_symbol = ANY(%s)
         ORDER BY stock_symbol, prediction_date DESC
-    """, conn)
+    """, conn, params=(active_symbols,))
     conn.close()
 
     if df.empty:

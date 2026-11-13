@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stock Email Alert Manager</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; padding: 16px; color: #222; }
+    .navbar { display: flex; overflow-x: auto; white-space: nowrap; background: #2c3e50; margin: -16px -16px 18px; }
+    .navbar a { flex: 0 0 auto; color: white; text-decoration: none; padding: 14px 18px; }
+    .navbar a:hover { background: #1abc9c; }
+    h2 { margin: 12px 0; }
+    .panel { margin: 16px 0; padding: 14px; border: 1px solid #ddd; border-radius: 6px; }
+    .controls { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+    label { display: grid; gap: 5px; font-size: 13px; }
+    input, button { padding: 8px; font-size: 14px; }
+    input[type="checkbox"] { width: 18px; height: 18px; }
+    button { cursor: pointer; }
+    button:disabled { cursor: wait; opacity: .6; }
+    .recipient-form { display: flex; gap: 8px; max-width: 500px; }
+    .recipient-form input[type="email"] { flex: 1; min-width: 0; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 8px; border-bottom: 1px solid #ddd; text-align: left; }
+    th { background: #f3f5f6; }
+    .table-wrap { overflow-x: auto; }
+    .compact { width: auto; min-width: 300px; }
+    .compact th, .compact td { text-align: center; }
+    .compact th:first-child { text-align: left; }
+    .inline-check { display: inline-flex; align-items: center; gap: 5px; }
+    #message { padding: 10px; margin: 10px 0; background: #eef4f7; white-space: pre-wrap; }
+    .error { color: #9b1c1c; background: #fcebea !important; }
+    .positive { color: #137333; font-weight: 600; }
+    .negative { color: #b3261e; font-weight: 600; }
+    .note { color: #555; font-size: 13px; line-height: 1.5; }
+    #login-panel { max-width: 440px; }
+    #app[hidden], #login-panel[hidden] { display: none; }
+    .recipient-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+    .recipient-actions button { padding: 5px 7px; }
+    @media (max-width: 600px) {
+      body { padding: 10px; }
+      .navbar { margin: -10px -10px 14px; }
+      .navbar a { padding: 12px; font-size: 13px; }
+      .panel { padding: 10px; }
+      .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .controls > * { min-width: 0; }
+      .controls button { min-height: 40px; }
+      .recipient-form { width: 100%; }
+      .recipient-form input[type="email"] { width: 100%; }
+      .table-wrap { -webkit-overflow-scrolling: touch; }
+      table { min-width: 680px; }
+      .compact { min-width: 300px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="stockcaller.html">Stock Caller</a>
+    <a href="near_entry.html">Near Entry</a>
+    <a href="market_correction.html">Market Correction</a>
+    <a href="price_performance.html">Performance</a>
+    <a href="email_alerts.html">Email Alerts</a>
+    <a href="stock_master.html">Stock List</a>
+  </nav>
+
+  <h2>Stock Movement Email Alerts</h2>
+  <div id="message" role="status" hidden></div>
+
+  <section id="login-panel" class="panel" hidden>
+    <p>Sign in to manage alert recipients and thresholds.</p>
+    <form id="login-form" class="controls">
+      <label>Management password
+        <input id="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">Sign in</button>
+    </form>
+  </section>
+
+  <main id="app" hidden>
+    <div class="controls">
+      <button id="run-check" type="button">Run daily alert check now</button>
+      <button id="force-send" type="button">Resend today's alerts now (override daily limit)</button>
+      <button id="logout" type="button">Sign out</button>
+    </div>
+    <p class="note">The first check each trading day refreshes active-stock prices, checks after-close daily prices, and sends at most one digest per recipient. Schedule the PHP runner after the market closes for automatic alerts.</p>
+    <p id="smtp-status" class="note"></p>
+
+    <section class="panel">
+      <h3>Alert rules</h3>
+      <form id="settings-form">
+        <label class="inline-check">
+          <input id="alerts-enabled" type="checkbox">
+          Enable rise/fall alerts
+        </label>
+        <p>Send an alert when the adjusted close changes by at least the threshold over the selected number of trading sessions.</p>
+        <div class="table-wrap">
+          <table class="compact">
+            <thead><tr><th>Lookback</th><th>Fall threshold (%)</th><th>Rise threshold (%)</th></tr></thead>
+            <tbody id="thresholds"></tbody>
+          </table>
+        </div>
+        <p><button type="submit">Save alert rules</button></p>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h3>Email recipients</h3>
+      <form id="recipient-form" class="recipient-form">
+        <input id="recipient-email" type="email" placeholder="name@example.com" autocomplete="email" required>
+        <button type="submit">Add email</button>
+      </form>
+      <p class="note">Recipients are stored in PostgreSQL. Rise/fall delivery preferences can be configured individually.</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Email</th><th>Enabled</th><th>Rises</th><th>Falls</th><th>Actions</th></tr></thead>
+          <tbody id="recipients"></tbody>
+        </table>
+      </div>
+      <form id="test-email-form" class="recipient-form" style="margin-top:12px">
+        <input id="test-email" type="email" placeholder="Send test email to…" required>
+        <button type="submit">Send test email</button>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h3>Recent detected movements and email deliveries</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Detected</th><th>Stock</th><th>Direction</th><th>Period</th><th>Move</th><th>Dates</th><th>Delivery</th></tr></thead>
+          <tbody id="history"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const api = "stock_alerts.php";
+    const message = document.getElementById("message");
+    let csrf = "";
+    let settings = null;
+
+    function showMessage(text, isError = false) {
+      message.textContent = text;
+      message.classList.toggle("error", isError);
+      message.hidden = !text;
+    }
+
+    async function request(action, body = null) {
+      const options = { method: body === null ? "GET" : "POST", headers: {} };
+      if (body !== null) {
+        options.headers["Content-Type"] = "application/json";
+        options.body = JSON.stringify({ ...body, csrf });
+      }
+      const response = await fetch(`${api}?action=${encodeURIComponent(action)}`, options);
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.error || `Request failed (HTTP ${response.status}).`);
+      return result;
+    }
+
+    function renderThresholds() {
+      const body = document.getElementById("thresholds");
+      body.replaceChildren();
+      for (const period of [1, 3, 5]) {
+        const values = settings.thresholds[String(period)] || { fall: 5, rise: 5 };
+        const tr = document.createElement("tr");
+        const name = document.createElement("th");
+        name.textContent = `${period} session${period === 1 ? "" : "s"}`;
+        tr.appendChild(name);
+        for (const direction of ["fall", "rise"]) {
+          const td = document.createElement("td");
+          const input = document.createElement("input");
+          input.type = "number";
+          input.min = "0.1";
+          input.max = "100";
+          input.step = "0.1";
+          input.required = true;
+          input.dataset.period = String(period);
+          input.dataset.direction = direction;
+          input.value = values[direction];
+          td.appendChild(input);
+          tr.appendChild(td);
+        }
+        body.appendChild(tr);
+      }
+    }
+
+    function renderRecipients(recipients) {
+      const body = document.getElementById("recipients");
+      body.replaceChildren();
+      if (recipients.length === 0) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 5;
+        cell.textContent = "No recipients configured.";
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+
+      for (const recipient of recipients) {
+        const row = document.createElement("tr");
+        const email = document.createElement("td");
+        email.textContent = recipient.email;
+        row.appendChild(email);
+
+        for (const field of ["enabled", "alert_rises", "alert_falls"]) {
+          const cell = document.createElement("td");
+          const label = document.createElement("label");
+          label.className = "inline-check";
+          const checkbox = document.createElement("input");
+          checkbox.type = "checkbox";
+          checkbox.checked = recipient[field];
+          checkbox.setAttribute("aria-label", `${field.replace("_", " ")} for ${recipient.email}`);
+          checkbox.addEventListener("change", async () => {
+            recipient[field] = checkbox.checked;
+            try {
+              await request("update_recipient", {
+                id: recipient.id,
+                enabled: recipient.enabled,
+                alert_rises: recipient.alert_rises,
+                alert_falls: recipient.alert_falls,
+              });
+              showMessage("Recipient preferences saved.");
+            } catch (error) {
+              checkbox.checked = !checkbox.checked;
+              recipient[field] = checkbox.checked;
+              showMessage(error.message, true);
+            }
+          });
+          label.appendChild(checkbox);
+          cell.appendChild(label);
+          row.appendChild(cell);
+        }
+
+        const actions = document.createElement("td");
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.textContent = "Remove";
+        remove.addEventListener("click", async () => {
+          if (!confirm(`Remove ${recipient.email} from alert recipients?`)) return;
+          try {
+            await request("delete_recipient", { id: recipient.id });
+            await loadState();
+            showMessage("Recipient removed.");
+          } catch (error) {
+            showMessage(error.message, true);
+          }
+        });
+        actions.appendChild(remove);
+        row.appendChild(actions);
+        body.appendChild(row);
+      }
+    }
+
+    function renderHistory(rows) {
+      const body = document.getElementById("history");
+      body.replaceChildren();
+      if (rows.length === 0) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 7;
+        cell.textContent = "No movement alerts detected yet.";
+        row.appendChild(cell);
+        body.appendChild(row);
+        return;
+      }
+
+      for (const item of rows) {
+        const row = document.createElement("tr");
+        const movement = Number(item.change_pct);
+        const values = [
+          new Date(item.detected_at).toLocaleString(),
+          item.symbol,
+          item.direction.toUpperCase(),
+          `${item.period_sessions} session${Number(item.period_sessions) === 1 ? "" : "s"}`,
+          `${movement > 0 ? "+" : ""}${movement.toFixed(2)}%`,
+          `${item.start_date} → ${item.end_date}`,
+          item.deliveries,
+        ];
+        values.forEach((value, index) => {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          if (index === 2 || index === 4) cell.className = movement > 0 ? "positive" : "negative";
+          row.appendChild(cell);
+        });
+        body.appendChild(row);
+      }
+    }
+
+    async function loadState() {
+      const state = await request("state");
+      csrf = state.csrf;
+      settings = state.settings;
+      document.getElementById("login-panel").hidden = true;
+      document.getElementById("app").hidden = false;
+      document.getElementById("alerts-enabled").checked = settings.enabled;
+      document.getElementById("smtp-status").textContent = state.smtp_configured
+        ? "SMTP is configured."
+        : "SMTP is not configured. Add STOCK_ALERT_SMTP_HOST, STOCK_ALERT_SMTP_PORT, STOCK_ALERT_SMTP_ENCRYPTION, STOCK_ALERT_SMTP_USER, STOCK_ALERT_SMTP_PASSWORD, and STOCK_ALERT_FROM_EMAIL to the project .env before sending email.";
+      renderThresholds();
+      renderRecipients(state.recipients);
+      renderHistory(state.history);
+    }
+
+    async function initialize() {
+      try {
+        await loadState();
+      } catch (error) {
+        document.getElementById("app").hidden = true;
+        document.getElementById("login-panel").hidden = false;
+        if (error.message.includes("STOCK_ALERT_ADMIN_PASSWORD")) {
+          showMessage(error.message, true);
+        } else if (!error.message.includes("HTTP 401")) {
+          showMessage(error.message, true);
+        }
+      }
+    }
+
+    document.getElementById("login-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      showMessage("");
+      try {
+        const response = await fetch(`${api}?action=login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: document.getElementById("password").value }),
+        });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Sign-in failed.");
+        csrf = result.csrf;
+        document.getElementById("password").value = "";
+        await loadState();
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    });
+
+    document.getElementById("settings-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      const thresholds = {};
+      for (const input of document.querySelectorAll("#thresholds input")) {
+        thresholds[input.dataset.period] ||= {};
+        thresholds[input.dataset.period][input.dataset.direction] = Number(input.value);
+      }
+      try {
+        await request("save_settings", {
+          enabled: document.getElementById("alerts-enabled").checked,
+          thresholds,
+        });
+        showMessage("Alert rules saved.");
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    });
+
+    document.getElementById("recipient-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      try {
+        await request("add_recipient", { email: document.getElementById("recipient-email").value });
+        document.getElementById("recipient-email").value = "";
+        await loadState();
+        showMessage("Recipient added.");
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    });
+
+    document.getElementById("test-email-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      try {
+        await request("test_email", { email: document.getElementById("test-email").value });
+        showMessage("Test email sent.");
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    });
+
+    document.getElementById("run-check").addEventListener("click", async () => {
+      if (!confirm("Run the alert check now? On the first run today, this refreshes prices for all 130 stocks.")) return;
+      const button = document.getElementById("run-check");
+      button.disabled = true;
+      showMessage("Refreshing daily prices and checking alert rules. This may take a few minutes.");
+      try {
+        const result = await request("run", { force_refresh: false });
+        const run = result.result;
+        await loadState();
+        showMessage(`Alert check ${run.status}. ${run.new_events} movement events; ${run.emails_sent} emails sent; `
+          + `${run.price_errors} price errors.${run.delivery_errors.length ? `\n${run.delivery_errors.join("\n")}` : ""}`);
+      } catch (error) {
+        showMessage(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById("force-send").addEventListener("click", async () => {
+      if (!confirm("Refresh prices and resend today's matching alert digest, even if it was already sent today?")) return;
+      const button = document.getElementById("force-send");
+      button.disabled = true;
+      showMessage("Refreshing prices and sending today's matching alerts. This may take a few minutes.");
+      try {
+        const result = await request("force_send", {});
+        const run = result.result;
+        await loadState();
+        showMessage(`Override check ${run.status}. ${run.new_events} movement events; ${run.emails_sent} emails sent; `
+          + `${run.price_errors} price errors.${run.delivery_errors.length ? `\n${run.delivery_errors.join("\n")}` : ""}`);
+      } catch (error) {
+        showMessage(error.message, true);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById("logout").addEventListener("click", async () => {
+      try {
+        await request("logout", {});
+        csrf = "";
+        document.getElementById("app").hidden = true;
+        document.getElementById("login-panel").hidden = false;
+        showMessage("Signed out.");
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    });
+
+    initialize();
+  </script>
+</body>
+</html>

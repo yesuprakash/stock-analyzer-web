@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stock List Manager</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; padding: 16px; color: #222; }
+    .navbar { display: flex; overflow-x: auto; white-space: nowrap; background: #2c3e50; margin: -16px -16px 18px; }
+    .navbar a { flex: 0 0 auto; color: white; text-decoration: none; padding: 14px 18px; }
+    .navbar a:hover { background: #1abc9c; }
+    h2 { margin: 12px 0; }
+    .panel { margin: 16px 0; padding: 14px; border: 1px solid #ddd; border-radius: 6px; }
+    .controls { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; }
+    label { display: grid; gap: 5px; font-size: 13px; }
+    input, select, button { padding: 8px; font-size: 14px; }
+    input[type="checkbox"] { width: 18px; height: 18px; }
+    button { cursor: pointer; }
+    button:disabled { cursor: wait; opacity: .6; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: 8px; border-bottom: 1px solid #ddd; text-align: left; }
+    th { background: #f3f5f6; }
+    .table-wrap { overflow-x: auto; }
+    .table-wrap input[type="text"] { min-width: 170px; width: 100%; box-sizing: border-box; }
+    #message { padding: 10px; margin: 10px 0; background: #eef4f7; white-space: pre-wrap; }
+    .error { color: #9b1c1c; background: #fcebea !important; }
+    .note { color: #555; font-size: 13px; line-height: 1.5; }
+    #login-panel { max-width: 440px; }
+    #app[hidden], #login-panel[hidden] { display: none; }
+    .active { color: #137333; font-weight: 600; }
+    .inactive { color: #777; }
+    @media (max-width: 600px) {
+      body { padding: 10px; }
+      .navbar { margin: -10px -10px 14px; }
+      .navbar a { padding: 12px; font-size: 13px; }
+      .panel { padding: 10px; }
+      .table-wrap { -webkit-overflow-scrolling: touch; }
+      table { min-width: 590px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar">
+    <a href="stockcaller.html">Stock Caller</a>
+    <a href="near_entry.html">Near Entry</a>
+    <a href="market_correction.html">Market Correction</a>
+    <a href="price_performance.html">Performance</a>
+    <a href="email_alerts.html">Email Alerts</a>
+    <a href="stock_master.html">Stock List</a>
+  </nav>
+
+  <h2>Stock Master</h2>
+  <div id="message" role="status" hidden></div>
+
+  <section id="login-panel" class="panel" hidden>
+    <p>Sign in with the management password to edit the stock list.</p>
+    <form id="login-form" class="controls">
+      <label>Management password
+        <input id="password" type="password" autocomplete="current-password" required>
+      </label>
+      <button type="submit">Sign in</button>
+    </form>
+  </section>
+
+  <main id="app" hidden>
+    <div class="controls">
+      <button id="logout" type="button">Sign out</button>
+      <label>Show
+        <select id="filter">
+          <option value="all">All stocks</option>
+          <option value="active">Active only</option>
+          <option value="inactive">Inactive only</option>
+        </select>
+      </label>
+      <label>Search ticker or company
+        <input id="search" type="search" autocomplete="off">
+      </label>
+    </div>
+
+    <section class="panel">
+      <h3>Add a stock</h3>
+      <form id="add-form" class="controls">
+        <label>Yahoo Finance ticker
+          <input id="symbol" type="text" placeholder="RELIANCE.NS" maxlength="32" required>
+        </label>
+        <label>Company name (optional)
+          <input id="company-name" type="text" maxlength="120">
+        </label>
+        <button type="submit">Add stock</button>
+      </form>
+      <p class="note">Use tickers ending in .NS or .BO. Deactivate stocks to remove them from analysis without deleting their history.</p>
+    </section>
+
+    <section class="panel">
+      <h3>Stocks (<span id="counts">0 active</span>)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Ticker</th><th>Company name</th><th>Included in analysis</th><th>Save</th></tr></thead>
+          <tbody id="stocks"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const api = "stock_master.php";
+    let csrf = "";
+    let stocks = [];
+    const message = document.getElementById("message");
+    const app = document.getElementById("app");
+    const loginPanel = document.getElementById("login-panel");
+
+    function showMessage(text, isError = false) {
+      message.textContent = text;
+      message.classList.toggle("error", isError);
+      message.hidden = !text;
+    }
+
+    async function request(action, body) {
+      const options = { method: body ? "POST" : "GET", headers: {} };
+      if (body) {
+        options.headers["Content-Type"] = "application/json";
+        options.body = JSON.stringify({ ...body, csrf });
+      }
+      const response = await fetch(`${api}?action=${encodeURIComponent(action)}`, options);
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Request failed.");
+      return data;
+    }
+
+    function renderStocks() {
+      const query = document.getElementById("search").value.trim().toLowerCase();
+      const filter = document.getElementById("filter").value;
+      const visible = stocks.filter(stock => {
+        const statusMatches = filter === "all" || (filter === "active" ? stock.enabled : !stock.enabled);
+        const textMatches = `${stock.symbol} ${stock.company_name}`.toLowerCase().includes(query);
+        return statusMatches && textMatches;
+      });
+      document.getElementById("counts").textContent =
+        `${stocks.filter(stock => stock.enabled).length} active / ${stocks.length} total`;
+      const tbody = document.getElementById("stocks");
+      tbody.replaceChildren();
+      for (const stock of visible) {
+        const row = document.createElement("tr");
+        const symbolCell = document.createElement("td");
+        symbolCell.textContent = stock.symbol;
+        const nameCell = document.createElement("td");
+        const name = document.createElement("input");
+        name.type = "text";
+        name.maxLength = 120;
+        name.value = stock.company_name;
+        name.setAttribute("aria-label", `Company name for ${stock.symbol}`);
+        nameCell.append(name);
+        const activeCell = document.createElement("td");
+        const activeLabel = document.createElement("label");
+        activeLabel.className = stock.enabled ? "active" : "inactive";
+        const active = document.createElement("input");
+        active.type = "checkbox";
+        active.checked = stock.enabled;
+        active.setAttribute("aria-label", `Include ${stock.symbol} in analysis`);
+        activeLabel.append(active, document.createTextNode(stock.enabled ? " Active" : " Inactive"));
+        activeCell.append(activeLabel);
+        const saveCell = document.createElement("td");
+        const save = document.createElement("button");
+        save.type = "button";
+        save.textContent = "Save";
+        save.addEventListener("click", async () => {
+          save.disabled = true;
+          try {
+            await request("update", {
+              id: stock.id,
+              company_name: name.value,
+              enabled: active.checked
+            });
+            showMessage(`${stock.symbol} updated.`);
+            await loadState();
+          } catch (error) {
+            showMessage(error.message, true);
+            save.disabled = false;
+          }
+        });
+        saveCell.append(save);
+        row.append(symbolCell, nameCell, activeCell, saveCell);
+        tbody.append(row);
+      }
+    }
+
+    async function loadState() {
+      const data = await request("state");
+      csrf = data.csrf;
+      stocks = data.stocks;
+      renderStocks();
+      loginPanel.hidden = true;
+      app.hidden = false;
+    }
+
+    document.getElementById("login-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      try {
+        const response = await fetch(`${api}?action=login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password: document.getElementById("password").value })
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || "Sign-in failed.");
+        csrf = data.csrf;
+        await loadState();
+        showMessage("");
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    });
+
+    document.getElementById("add-form").addEventListener("submit", async event => {
+      event.preventDefault();
+      try {
+        await request("add", {
+          symbol: document.getElementById("symbol").value,
+          company_name: document.getElementById("company-name").value
+        });
+        event.target.reset();
+        await loadState();
+        showMessage("Stock added.");
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    });
+
+    document.getElementById("filter").addEventListener("change", renderStocks);
+    document.getElementById("search").addEventListener("input", renderStocks);
+    document.getElementById("logout").addEventListener("click", async () => {
+      try {
+        await request("logout", {});
+        app.hidden = true;
+        loginPanel.hidden = false;
+      } catch (error) {
+        showMessage(error.message, true);
+      }
+    });
+
+    loadState().catch(error => {
+      if (error.message && error.message !== "Request failed.") {
+        showMessage(error.message, error.message !== "Request failed.");
+      }
+      loginPanel.hidden = false;
+      app.hidden = true;
+    });
+  </script>
+</body>
+</html>
