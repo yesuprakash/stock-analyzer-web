@@ -40,7 +40,7 @@
     tbody tr:hover td:first-child, tbody tr:hover td:nth-child(2),
     tbody tr.selected td:first-child, tbody tr.selected td:nth-child(2) { background-color: #eef8f6; }
     .graph-cell { display: flex; align-items: center; gap: 6px; }
-    .details-button { padding: 4px 7px; font-size: 12px; }
+    .details-button, .copy-button { padding: 4px 7px; font-size: 12px; }
     #chart-panel { margin-top: 20px; border: 1px solid #ddd; padding: 12px; }
     #detail-chart { width: 100%; height: 260px; }
     .chart-label { fill: #555; font-size: 12px; }
@@ -74,7 +74,7 @@
       th:nth-child(2), td:nth-child(2) { left: 42px; width: 108px; min-width: 108px; }
       .sparkline { width: 90px; }
       .graph-cell { gap: 4px; }
-      .details-button { min-height: 34px; }
+      .details-button, .copy-button { min-height: 34px; }
       #chart-panel { margin-top: 12px; padding: 8px; }
       .detail-chart-wrap { overflow-x: auto; }
       #detail-chart { min-width: 640px; height: 220px; }
@@ -210,6 +210,72 @@
 
     function formatPercent(value) {
       return value === null || value === undefined ? "—" : `${value > 0 ? "+" : ""}${Number(value).toFixed(2)}%`;
+    }
+
+    function stockRowClipboardText(row) {
+      const history = row.history || [];
+      const latest = history.at(-1);
+      if (!latest) throw new Error(`No daily price history is available for ${row.symbol}.`);
+
+      const headers = [
+        "Symbol",
+        "Latest date",
+        "Latest adjusted close",
+        ...periods.map(days => `${days}-session % (price ${days} sessions ago)`),
+      ];
+      const values = [
+        row.symbol,
+        latest.date,
+        `₹${Number(row.latest_price ?? latest.close).toFixed(2)}`,
+      ];
+
+      periods.forEach(days => {
+        const basePoint = history[history.length - days - 1];
+        const change = row.performance[String(days)];
+        values.push(
+          basePoint && change !== null && change !== undefined
+            ? `${formatPercent(change)} (₹${Number(basePoint.close).toFixed(2)} on ${basePoint.date})`
+            : "N/A"
+        );
+      });
+
+      return `${headers.join("\t")}\r\n${values.join("\t")}`;
+    }
+
+    async function writeClipboard(text) {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      let copied;
+      try {
+        textarea.select();
+        copied = document.execCommand("copy");
+      } finally {
+        textarea.remove();
+      }
+      if (!copied) throw new Error("The browser could not access the clipboard.");
+    }
+
+    async function copyStockRow(row, button) {
+      try {
+        await writeClipboard(stockRowClipboardText(row));
+        errorBox.textContent = "";
+        button.textContent = "Copied";
+        statusBox.textContent = `Copied ${row.symbol} session returns and reference prices.`;
+        window.setTimeout(() => {
+          if (button.isConnected) button.textContent = "Copy";
+        }, 1500);
+      } catch (error) {
+        errorBox.textContent = error.message || `Could not copy ${row.symbol}.`;
+      }
     }
 
     function percentClass(value) {
@@ -465,6 +531,17 @@
             showPriceDetails(row);
           });
           graphCell.appendChild(detailsButton);
+          const copyButton = document.createElement("button");
+          copyButton.type = "button";
+          copyButton.className = "copy-button";
+          copyButton.textContent = "Copy";
+          copyButton.title = `Copy ${row.symbol} session returns and reference prices`;
+          copyButton.setAttribute("aria-label", `Copy complete performance row for ${row.symbol}`);
+          copyButton.addEventListener("click", event => {
+            event.stopPropagation();
+            copyStockRow(row, copyButton);
+          });
+          graphCell.appendChild(copyButton);
           sparkCell.appendChild(graphCell);
         }
         tr.appendChild(sparkCell);
