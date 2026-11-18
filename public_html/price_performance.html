@@ -12,7 +12,7 @@
     h2 { margin: 12px 0; }
     .controls { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin: 14px 0; }
     label { display: grid; gap: 4px; font-size: 13px; }
-    select, button { padding: 7px 10px; font-size: 14px; }
+    select, button, input { padding: 7px 10px; font-size: 14px; }
     button { cursor: pointer; }
     #status { margin: 12px 0; color: #555; }
     #errors { color: #9b1c1c; white-space: pre-wrap; }
@@ -20,6 +20,10 @@
     table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 1120px; }
     th, td { border-bottom: 1px solid #ddd; padding: 7px 9px; text-align: right; white-space: nowrap; font-size: 13px; }
     th { position: sticky; top: 0; background: #f3f5f6; z-index: 1; }
+    th[data-period] { cursor: pointer; user-select: none; }
+    th[data-period]::after { content: " ↕"; color: #64748b; font-size: 11px; }
+    th[data-period].sort-ascending::after { content: " ↑"; color: #222; }
+    th[data-period].sort-descending::after { content: " ↓"; color: #222; }
     th:first-child, td:first-child { text-align: left; }
     tbody tr { cursor: pointer; }
     tbody tr:hover, tbody tr.selected { background: #eef8f6; }
@@ -44,6 +48,7 @@
     dialog { width: min(1100px, 94vw); max-height: 90vh; border: 1px solid #aaa; border-radius: 6px; padding: 18px; }
     dialog::backdrop { background: rgb(0 0 0 / 45%); }
     .dialog-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+    .dialog-controls { display: flex; justify-content: flex-end; margin: 8px 0; }
     #expanded-chart { display: block; width: 100%; height: min(48vh, 440px); }
     .expanded-chart-wrap { overflow-x: auto; }
     .daily-table-wrap { max-height: 34vh; overflow: auto; }
@@ -60,7 +65,7 @@
       .controls { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; align-items: stretch; }
       .controls > button { min-height: 42px; }
       .controls label { font-size: 12px; }
-      .controls select { width: 100%; min-width: 0; }
+      .controls select, .controls input { width: 100%; min-width: 0; }
       #status { font-size: 13px; }
       .table-wrap { max-height: 60vh; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
       table { min-width: 1120px; }
@@ -75,6 +80,7 @@
       #detail-chart { min-width: 640px; height: 220px; }
       dialog { width: auto; max-width: none; max-height: 92vh; margin: auto 3vw; padding: 12px; }
       .dialog-header { position: sticky; top: 0; background: white; z-index: 1; }
+      .dialog-controls { justify-content: flex-start; }
       #expanded-chart { min-width: 760px; height: 300px; }
       #daily-prices { min-width: 380px; }
     }
@@ -96,6 +102,9 @@
   <div class="controls">
     <button id="analyze" type="button">Analyze / Load today's data</button>
     <button id="force-refresh" type="button">Force fresh API refresh</button>
+    <label>Filter stocks
+      <input id="stock-filter" type="search" placeholder="Name or symbol" autocomplete="off">
+    </label>
     <label>Rank by
       <select id="period">
         <option value="1">1 trading session</option>
@@ -134,11 +143,11 @@
       <thead>
         <tr>
           <th>Sl No</th><th>Stock</th>
-          <th data-period="1">1-session</th><th data-period="2">2-session</th>
-          <th data-period="3">3-session</th><th data-period="4">4-session</th>
-          <th data-period="5">5-session</th><th data-period="10">10-session</th>
-          <th data-period="15">15-session</th><th data-period="30">30-session</th>
-          <th data-period="45">45-session</th><th data-period="60">60-session</th>
+          <th data-period="1" tabindex="0" aria-label="Sort by 1-session return">1-session</th><th data-period="2" tabindex="0" aria-label="Sort by 2-session return">2-session</th>
+          <th data-period="3" tabindex="0" aria-label="Sort by 3-session return">3-session</th><th data-period="4" tabindex="0" aria-label="Sort by 4-session return">4-session</th>
+          <th data-period="5" tabindex="0" aria-label="Sort by 5-session return">5-session</th><th data-period="10" tabindex="0" aria-label="Sort by 10-session return">10-session</th>
+          <th data-period="15" tabindex="0" aria-label="Sort by 15-session return">15-session</th><th data-period="30" tabindex="0" aria-label="Sort by 30-session return">30-session</th>
+          <th data-period="45" tabindex="0" aria-label="Sort by 45-session return">45-session</th><th data-period="60" tabindex="0" aria-label="Sort by 60-session return">60-session</th>
           <th id="trend-heading">60-session trend</th>
         </tr>
       </thead>
@@ -158,6 +167,22 @@
     <div class="dialog-header">
       <strong id="expanded-title">Price details</strong>
       <button id="close-details" type="button">Close</button>
+    </div>
+    <div class="dialog-controls">
+      <label>Trend sessions
+        <select id="expanded-trend-period">
+          <option value="1">1 trading session</option>
+          <option value="2">2 trading sessions</option>
+          <option value="3">3 trading sessions</option>
+          <option value="4">4 trading sessions</option>
+          <option value="5">5 trading sessions</option>
+          <option value="10">10 trading sessions</option>
+          <option value="15">15 trading sessions</option>
+          <option value="30">30 trading sessions</option>
+          <option value="45">45 trading sessions</option>
+          <option value="60">60 trading sessions</option>
+        </select>
+      </label>
     </div>
     <div class="expanded-chart-wrap">
       <svg id="expanded-chart" viewBox="0 0 1200 420" role="img" aria-label="Expanded daily adjusted close chart"></svg>
@@ -180,6 +205,8 @@
     const errorBox = document.getElementById("errors");
     const allRows = new Map();
     let selectedSymbol = null;
+    let expandedSymbol = null;
+    let sortDirection = "asc";
 
     function formatPercent(value) {
       return value === null || value === undefined ? "—" : `${value > 0 ? "+" : ""}${Number(value).toFixed(2)}%`;
@@ -189,8 +216,8 @@
       return value > 0 ? "positive" : value < 0 ? "negative" : "neutral";
     }
 
-    function selectedTrendHistory(row) {
-      const count = Number(document.getElementById("trend-period").value);
+    function selectedTrendHistory(row, selectorId = "trend-period") {
+      const count = Number(document.getElementById(selectorId).value);
       return row.history.slice(-(count + 1));
     }
 
@@ -312,10 +339,10 @@
       }
     }
 
-    function showPriceDetails(row) {
+    function renderPriceDetails(row) {
       if (!row || row.error) return;
-      const history = selectedTrendHistory(row);
-      const trendPeriod = Number(document.getElementById("trend-period").value);
+      const history = selectedTrendHistory(row, "expanded-trend-period");
+      const trendPeriod = Number(document.getElementById("expanded-trend-period").value);
       document.getElementById("expanded-title").textContent =
         `${row.symbol} — ${trendPeriod} trading sessions (${history[0].date} to ${history.at(-1).date})`;
       drawPriceChart(row, document.getElementById("expanded-chart"), 1200, 420, history);
@@ -337,16 +364,34 @@
         });
         body.appendChild(tr);
       });
+    }
 
+    function showPriceDetails(row) {
+      if (!row || row.error) return;
+      expandedSymbol = row.symbol;
+      document.getElementById("expanded-trend-period").value =
+        document.getElementById("trend-period").value;
+      renderPriceDetails(row);
       document.getElementById("price-details").showModal();
     }
 
     function renderTable() {
       const period = document.getElementById("period").value;
       document.querySelectorAll("th[data-period]").forEach(header => {
-        header.classList.toggle("rank-column", header.dataset.period === period);
+        const isSelected = header.dataset.period === period;
+        header.classList.toggle("rank-column", isSelected);
+        header.classList.toggle("sort-ascending", isSelected && sortDirection === "asc");
+        header.classList.toggle("sort-descending", isSelected && sortDirection === "desc");
+        header.setAttribute("aria-sort", isSelected
+          ? (sortDirection === "asc" ? "ascending" : "descending")
+          : "none");
       });
-      const rows = [...allRows.values()].sort((a, b) => {
+      const searchTerm = document.getElementById("stock-filter").value.trim().toLowerCase();
+      const rows = [...allRows.values()].filter(row => {
+        if (!searchTerm) return true;
+        return [row.symbol, row.name, row.stock_name, row.company_name]
+          .some(value => typeof value === "string" && value.toLowerCase().includes(searchTerm));
+      }).sort((a, b) => {
         if (a.error || b.error) {
           if (a.error && b.error) return a.symbol.localeCompare(b.symbol);
           return a.error ? 1 : -1;
@@ -355,7 +400,9 @@
         const bValue = b.performance[period];
         if (aValue === null) return bValue === null ? a.symbol.localeCompare(b.symbol) : 1;
         if (bValue === null) return -1;
-        return aValue - bValue;
+        const difference = aValue - bValue;
+        if (difference === 0) return a.symbol.localeCompare(b.symbol);
+        return sortDirection === "asc" ? difference : -difference;
       });
 
       resultsBody.replaceChildren();
@@ -484,10 +531,45 @@
         analyze(true);
       }
     });
-    document.getElementById("period").addEventListener("change", renderTable);
+    document.getElementById("period").addEventListener("change", () => {
+      sortDirection = "asc";
+      renderTable();
+    });
+    document.getElementById("stock-filter").addEventListener("input", renderTable);
     document.getElementById("trend-period").addEventListener("change", () => {
       renderTable();
       drawDetail(allRows.get(selectedSymbol));
+      const expanded = allRows.get(expandedSymbol);
+      if (expanded && document.getElementById("price-details").open) {
+        document.getElementById("expanded-trend-period").value =
+          document.getElementById("trend-period").value;
+        renderPriceDetails(expanded);
+      }
+    });
+    document.getElementById("expanded-trend-period").addEventListener("change", event => {
+      document.getElementById("trend-period").value = event.target.value;
+      renderTable();
+      drawDetail(allRows.get(selectedSymbol));
+      renderPriceDetails(allRows.get(expandedSymbol));
+    });
+    document.querySelectorAll("th[data-period]").forEach(header => {
+      const sortByHeader = () => {
+        const period = header.dataset.period;
+        if (period === document.getElementById("period").value) {
+          sortDirection = sortDirection === "asc" ? "desc" : "asc";
+        } else {
+          sortDirection = "desc";
+        }
+        document.getElementById("period").value = period;
+        renderTable();
+      };
+      header.addEventListener("click", sortByHeader);
+      header.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          sortByHeader();
+        }
+      });
     });
     document.getElementById("close-details").addEventListener("click", () => {
       document.getElementById("price-details").close();
