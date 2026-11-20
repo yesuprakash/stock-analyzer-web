@@ -17,7 +17,7 @@
     #status { margin: 12px 0; color: #555; }
     #errors { color: #9b1c1c; white-space: pre-wrap; }
     .table-wrap { overflow: auto; max-height: 65vh; border: 1px solid #ccc; }
-    table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 1120px; }
+    table { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 1800px; }
     th, td { border-bottom: 1px solid #ddd; padding: 7px 9px; text-align: right; white-space: nowrap; font-size: 13px; }
     th { position: sticky; top: 0; background: #f3f5f6; z-index: 1; }
     th[data-period] { cursor: pointer; user-select: none; }
@@ -68,7 +68,7 @@
       .controls select, .controls input { width: 100%; min-width: 0; }
       #status { font-size: 13px; }
       .table-wrap { max-height: 60vh; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
-      table { min-width: 1120px; }
+      table { min-width: 1800px; }
       th, td { padding: 8px 9px; font-size: 12px; }
       th:first-child, td:first-child { left: 0; width: 42px; min-width: 42px; }
       th:nth-child(2), td:nth-child(2) { left: 42px; width: 108px; min-width: 108px; }
@@ -117,6 +117,12 @@
         <option value="30">30 trading sessions</option>
         <option value="45">45 trading sessions</option>
         <option value="60">60 trading sessions</option>
+        <option value="75">75 trading sessions</option>
+        <option value="90">90 trading sessions</option>
+        <option value="105">105 trading sessions</option>
+        <option value="120">120 trading sessions</option>
+        <option value="150">150 trading sessions</option>
+        <option value="180">180 trading sessions</option>
       </select>
     </label>
     <label>Trend sessions
@@ -131,6 +137,12 @@
         <option value="30">30 trading sessions</option>
         <option value="45">45 trading sessions</option>
         <option value="60" selected>60 trading sessions</option>
+        <option value="75">75 trading sessions</option>
+        <option value="90">90 trading sessions</option>
+        <option value="105">105 trading sessions</option>
+        <option value="120">120 trading sessions</option>
+        <option value="150">150 trading sessions</option>
+        <option value="180">180 trading sessions</option>
       </select>
     </label>
   </div>
@@ -148,10 +160,13 @@
           <th data-period="5" tabindex="0" aria-label="Sort by 5-session return">5-session</th><th data-period="10" tabindex="0" aria-label="Sort by 10-session return">10-session</th>
           <th data-period="15" tabindex="0" aria-label="Sort by 15-session return">15-session</th><th data-period="30" tabindex="0" aria-label="Sort by 30-session return">30-session</th>
           <th data-period="45" tabindex="0" aria-label="Sort by 45-session return">45-session</th><th data-period="60" tabindex="0" aria-label="Sort by 60-session return">60-session</th>
+          <th data-period="75" tabindex="0" aria-label="Sort by 75-session return">75-session</th><th data-period="90" tabindex="0" aria-label="Sort by 90-session return">90-session</th>
+          <th data-period="105" tabindex="0" aria-label="Sort by 105-session return">105-session</th><th data-period="120" tabindex="0" aria-label="Sort by 120-session return">120-session</th>
+          <th data-period="150" tabindex="0" aria-label="Sort by 150-session return">150-session</th><th data-period="180" tabindex="0" aria-label="Sort by 180-session return">180-session</th>
           <th id="trend-heading">60-session trend</th>
         </tr>
       </thead>
-      <tbody id="results"><tr><td colspan="13">No analysis loaded.</td></tr></tbody>
+      <tbody id="results"><tr><td colspan="19">No analysis loaded.</td></tr></tbody>
     </table>
   </div>
 
@@ -181,6 +196,12 @@
           <option value="30">30 trading sessions</option>
           <option value="45">45 trading sessions</option>
           <option value="60">60 trading sessions</option>
+          <option value="75">75 trading sessions</option>
+          <option value="90">90 trading sessions</option>
+          <option value="105">105 trading sessions</option>
+          <option value="120">120 trading sessions</option>
+          <option value="150">150 trading sessions</option>
+          <option value="180">180 trading sessions</option>
         </select>
       </label>
     </div>
@@ -198,7 +219,7 @@
 
   <script>
     const apiUrl = "price_performance.php";
-    const periods = [1, 2, 3, 4, 5, 10, 15, 30, 45, 60];
+    const periods = [1, 2, 3, 4, 5, 10, 15, 30, 45, 60, 75, 90, 105, 120, 150, 180];
     const batchSize = 10;
     const resultsBody = document.getElementById("results");
     const statusBox = document.getElementById("status");
@@ -475,7 +496,7 @@
       if (rows.length === 0) {
         const tr = document.createElement("tr");
         const td = document.createElement("td");
-        td.colSpan = 13;
+        td.colSpan = 19;
         td.textContent = allRows.size ? "No stocks match this filter." : "No analysis loaded.";
         tr.appendChild(td);
         resultsBody.appendChild(tr);

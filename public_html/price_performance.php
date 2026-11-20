@@ -5,7 +5,7 @@ header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 set_time_limit(0);
 
-const PERFORMANCE_PERIODS = [1, 2, 3, 4, 5, 10, 15, 30, 45, 60];
+const PERFORMANCE_PERIODS = [1, 2, 3, 4, 5, 10, 15, 30, 45, 60, 75, 90, 105, 120, 150, 180];
 const BATCH_SIZE = 10;
 
 require_once __DIR__ . DIRECTORY_SEPARATOR . 'stock_analyzer_bootstrap.php';
@@ -34,7 +34,7 @@ function cachePaths(): array
 function yahooUrl(string $symbol): string
 {
     return 'https://query1.finance.yahoo.com/v8/finance/chart/' . rawurlencode($symbol)
-        . '?range=6mo&interval=1d&events=div%2Csplits';
+        . '?range=1y&interval=1d&events=div%2Csplits';
 }
 
 function parseYahooResponse(string $body, string $symbol): array
@@ -161,7 +161,7 @@ function formatStockResult(string $symbol, array $cached, bool $stale): array
         'latest_date' => $latest['date'],
         'daily_change_pct' => round((($latest['close'] / $previous['close']) - 1) * 100, 2),
         'performance' => $performance,
-        'history' => array_slice($history, -61),
+        'history' => array_slice($history, -181),
         'fetched_at' => $cached['fetched_at'] ?? null,
         'cache_date' => $cached['fetched_date'] ?? null,
         'stale' => $stale,
