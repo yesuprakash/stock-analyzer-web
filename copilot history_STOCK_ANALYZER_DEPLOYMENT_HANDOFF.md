@@ -1,6 +1,6 @@
 # Stock Analyzer Deployment Handoff
 
-Updated: 2026-11-20
+Updated: 2026-11-24
 
 ## Project and server locations
 
@@ -208,3 +208,47 @@ The PHP endpoint passed `php -l`. The deployment ZIP was rebuilt on 2026-11-20 a
 `D:\stock project\server files\stock_analyzer_server_deploy_php74.zip`
 
 The rebuilt ZIP contains 31 files and excludes `.env`, virtualenvs, logs, caches, debug/test files, and analyst-research work. It includes the updated `public_html/price_performance.html` and `public_html/price_performance.php`.
+
+## 2026-11-24 Performance, deployment, and analyzer updates
+
+### Stock Performance display
+
+`public_html/price_performance.html` was updated to show the latest available adjusted close beside each symbol and to show each session return with its comparison close from N trading sessions earlier. This is cached daily adjusted-close data, not an intraday quote. The user confirmed deploying the Performance page.
+
+### Email Alerts database ownership error
+
+The user reported `must be owner of relation stock_alert_recipients`. The runtime `CREATE UNIQUE INDEX IF NOT EXISTS` in `backend/stock_alert_lib.php` caused the app role to attempt DDL on a table it did not own. The statement was removed; the existing database setup script still creates the index. No schema migration or ownership change is required. The user was advised to deploy `public_html/market_correction.php` and `backend/stock_alert_lib.php` as separate fixes came up, but deployment of the alert-library fix has not been explicitly confirmed.
+
+### Market Correction
+
+The live `market_correction.php` response showed a Windows XAMPP Python path being executed on the Linux server. The endpoint was updated to discover the project root and use its platform-appropriate virtual-environment Python executable. `market_correction.html` was updated to use relative URLs for both `market_correction.php` and `market_correction_logs.php`, to load results only after **Apply**, and to show an initial prompt instead of a premature loading state.
+
+The Python logger was aligned with `market_correction_logs.php`: on the Linux sibling-folder layout it writes `market_correction_api.log` under `/home/bhavat5/public_html/logs`; on local Windows it uses the project's `public_html/logs`. Syntax checks passed. The user reported a 404 before the relative-URL update; deployment and post-fix verification are not confirmed.
+
+### Near Entry
+
+The server's `near_entry.php` returned HTTP 200 with an empty body because it referenced the Windows XAMPP Python executable. It was updated to find `near_entry_api.py` and the venv in the local or server project layout, validate the Python JSON output, and return explicit JSON errors.
+
+`near_entry.html` was changed to run only on **Apply**, remove the separate Refresh trigger, show loading only during a request, and display request errors in the grid. `backend/near_entry_core.py` now rejects future-dated predictions in the age filter and suppresses the known pandas DBAPI `read_sql` warning that otherwise prefixed valid JSON and caused the PHP endpoint to reject it.
+
+The user supplied a successful Python response containing rows dated 2026-11-11; with the default 3-day maximum age, those rows correctly showed `SKIP (prediction too old)`. The warning-suppression update was provided for deployment; deployment of that final update is not confirmed. `backend/logger.py` and `backend/stock_master_seed.json` were inspected and are present in the user's server-file collection.
+
+### Stock Caller progress and database permission
+
+`public_html/stockcaller.html` now shows per-stock progress based on analyzer log entries, polls the log while the job runs, and reports completion or failure in the page. `public_html/run_analyzer.php` now resolves the Python venv and analyzer script for local or Linux server layout, initializes a private `stock_analyzer/logs/web_run.log`, launches the job in the background, and appends an exit-code marker on Linux. `public_html/view_log.php` reads that same private log. Syntax checks passed; the analyzer was not run locally because it mutates prediction tables.
+
+The user ran the analyzer on the server and supplied a log showing `permission denied for relation predictions` during `TRUNCATE TABLE predictions`. The current `stock_analyzer.py` catches this cleanup error and continues, so a run may add new predictions without clearing old ones. `stockcaller.html` was updated to classify `Delete old predictions failed` as a failed run, but this UI update is not confirmed deployed. A database owner/admin must grant `TRUNCATE` on `public.predictions` to the exact application `DB_USER` from the server `.env`; this permits the analyzer to clear all rows at the start of each run. The grant has not been confirmed. Do not share `.env` credentials.
+
+### Deployment status and validation
+
+- The user confirmed `price_performance.html` is deployed.
+- The user reported deploying Near Entry runner/page/core updates and subsequently observed the pandas warning mixed with JSON; the warning-suppression patch is a further `backend/near_entry_core.py` update.
+- Market Correction URL/log updates and the latest Stock Caller failure-status change still need server verification.
+- PHP lint, JavaScript syntax, Python syntax/warning-filter checks, and `git diff --check` passed for the local changes described above.
+- No local analyzer run or database permission change was performed. Keep the server `.env` and virtual environment untouched during deployments.
+
+### Stock Caller shared-session authentication
+
+The Stock Caller page and its run/log endpoints now use the existing management login session shared by Stock List and Email Alerts. The page obtains a session CSRF token from the run endpoint; starting the analyzer requires an authenticated POST with that token, while log reads also require the admin session. The page directs users to sign in through either management screen before returning to Stock Caller. No launcher credential is embedded in the HTML or PHP endpoints.
+
+PHP lint and Stock Caller JavaScript syntax checks passed locally. Server deployment and a post-deployment run are not confirmed. Continue to preserve the server `.env`; do not share or reuse any previously exposed launcher credential.

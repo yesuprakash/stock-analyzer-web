@@ -34,7 +34,7 @@
     th.rank-column { background: #fff0b3; }
     td.rank-column { background: #fff9e6; }
     th:first-child, td:first-child { position: sticky; left: 0; width: 46px; min-width: 46px; box-sizing: border-box; z-index: 2; background-clip: padding-box; }
-    th:nth-child(2), td:nth-child(2) { position: sticky; left: 46px; width: 116px; min-width: 116px; box-sizing: border-box; z-index: 2; background-clip: padding-box; }
+    th:nth-child(2), td:nth-child(2) { position: sticky; left: 46px; width: 160px; min-width: 160px; box-sizing: border-box; z-index: 2; background-clip: padding-box; }
     th:first-child, th:nth-child(2) { z-index: 4; }
     tbody td:first-child, tbody td:nth-child(2) { background-color: #fff; }
     tbody tr:hover td:first-child, tbody tr:hover td:nth-child(2),
@@ -71,7 +71,7 @@
       table { min-width: 1800px; }
       th, td { padding: 8px 9px; font-size: 12px; }
       th:first-child, td:first-child { left: 0; width: 42px; min-width: 42px; }
-      th:nth-child(2), td:nth-child(2) { left: 42px; width: 108px; min-width: 108px; }
+      th:nth-child(2), td:nth-child(2) { left: 42px; width: 150px; min-width: 150px; }
       .sparkline { width: 90px; }
       .graph-cell { gap: 4px; }
       .details-button, .copy-button { min-height: 34px; }
@@ -154,7 +154,7 @@
     <table>
       <thead>
         <tr>
-          <th>Sl No</th><th>Stock</th>
+          <th>Sl No</th><th>Stock (latest adjusted close)</th>
           <th data-period="1" tabindex="0" aria-label="Sort by 1-session return">1-session</th><th data-period="2" tabindex="0" aria-label="Sort by 2-session return">2-session</th>
           <th data-period="3" tabindex="0" aria-label="Sort by 3-session return">3-session</th><th data-period="4" tabindex="0" aria-label="Sort by 4-session return">4-session</th>
           <th data-period="5" tabindex="0" aria-label="Sort by 5-session return">5-session</th><th data-period="10" tabindex="0" aria-label="Sort by 10-session return">10-session</th>
@@ -231,6 +231,11 @@
 
     function formatPercent(value) {
       return value === null || value === undefined ? "—" : `${value > 0 ? "+" : ""}${Number(value).toFixed(2)}%`;
+    }
+
+    function formatPrice(value) {
+      const price = Number(value);
+      return Number.isFinite(price) ? `₹${price.toFixed(2)}` : "—";
     }
 
     function stockRowClipboardText(row) {
@@ -518,12 +523,21 @@
           ? [String(index + 1), row.symbol, row.error, ...periods.slice(1).map(() => "—")]
           : [
               String(index + 1),
-              `${row.symbol}${row.stale ? " (cached)" : ""}`,
-              ...periods.map(days => formatPercent(row.performance[String(days)])),
+              `${row.symbol}${row.stale ? " (cached)" : ""} (${formatPrice(row.latest_price)})`,
+              ...periods.map(days => {
+                const change = row.performance[String(days)];
+                const basePoint = row.history[row.history.length - days - 1];
+                return change === null || change === undefined
+                  ? formatPercent(change)
+                  : `${formatPercent(change)} (${formatPrice(basePoint?.close)})`;
+              }),
             ];
         values.forEach((value, index) => {
           const td = document.createElement("td");
           td.textContent = value;
+          if (index === 1 && !row.error) {
+            td.title = `Latest available adjusted close on ${row.latest_date}`;
+          }
           if (index >= 2 && periods[index - 2] === Number(period)) {
             td.classList.add("rank-column");
           }

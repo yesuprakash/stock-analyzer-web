@@ -77,7 +77,6 @@ th {
 </div>
 <h2>🎯 Near Entry Screen</h2>
 
-<button onclick="loadNearEntry()">🔄 Refresh</button>
 <div class="filters">
 
   <label>Max Prediction Age (days)</label>
@@ -111,7 +110,7 @@ th {
     <input type="checkbox" id="actionable_only"> Show Only Actionable
   </label>
 
-  <button onclick="loadNearEntry()">Apply</button>
+  <button id="apply-button" type="button" onclick="loadNearEntry()">Apply</button>
 
 </div>
 
@@ -128,7 +127,7 @@ th {
     </tr>
   </thead>
   <tbody>
-    <tr><td colspan="7" class="loading">Loading...11</td></tr>
+    <tr><td colspan="7" class="loading">Click Apply to load results.</td></tr>
   </tbody>
 </table>
 
@@ -191,15 +190,38 @@ function loadNearEntry() {
     actionable_only: document.getElementById("actionable_only").checked ? 1 : 0
   });
 
+  const tbody = document.querySelector("#tbl tbody");
+  tbody.innerHTML = "<tr><td colspan='7' class='loading'>Loading...</td></tr>";
+  const applyButton = document.getElementById("apply-button");
+  applyButton.disabled = true;
+
   fetch("near_entry.php?" + params.toString())
-    .then(res => res.json())
+    .then(async res => {
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.details || data.error || `HTTP ${res.status}`);
+      }
+      if (!Array.isArray(data)) {
+        throw new Error(data.error || "Unexpected response from Near Entry.");
+      }
+      return data;
+    })
     .then(renderTable)
-    .catch(err => console.error(err));
+    .catch(err => {
+      console.error(err);
+      tbody.innerHTML = "";
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 7;
+      cell.className = "loading";
+      cell.textContent = `Error loading data: ${err.message}`;
+      row.appendChild(cell);
+      tbody.appendChild(row);
+    })
+    .finally(() => {
+      applyButton.disabled = false;
+    });
 }
-
-
-// Auto-load
-loadNearEntry();
 </script>
 
 </body>

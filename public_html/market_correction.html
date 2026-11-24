@@ -150,7 +150,7 @@
     </tr>
   </thead>
   <tbody>
-    <tr><td colspan="8">Loading...</td></tr>
+    <tr><td colspan="8">Click Apply to load data.</td></tr>
   </tbody>
 </table>
 
@@ -185,7 +185,7 @@ function loadData() {
   const tbody = document.querySelector("#tbl tbody");
   tbody.innerHTML = "<tr><td colspan='8'>Loading...</td></tr>";
 
-  fetch(`/Stock_Analyzer/public_html/market_correction.php?window=${windowVal}` +
+  fetch(`market_correction.php?window=${windowVal}` +
       `&min_corr=${minCorr}` +
       `&max_corr=${maxCorr}` +
       `&rsi_min=${rsiVal}` +
@@ -230,13 +230,11 @@ function loadData() {
     
 }
 
-// Initial load
-//loadData();
 </script>
 
 <script>
 function loadLogs() {
-  fetch('/Stock_Analyzer/public_html/market_correction_logs.php')
+  fetch('market_correction_logs.php')
     .then(res => res.text())
     .then(text => {
       const box = document.getElementById("logBox");

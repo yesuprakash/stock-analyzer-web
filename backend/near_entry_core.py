@@ -2,6 +2,7 @@
 
 import os
 import sys
+import warnings
 from datetime import datetime
 from backend.logger import logger
         
@@ -162,13 +163,19 @@ def fetch_active_predictions(latest_only=True):
 
     conn = get_connection()
 
-    df = pd.read_sql("""
-        SELECT stock_symbol, prediction_date,
-               entry_price, target_price, stop_loss,
-               trade_signal, probability_success
-        FROM predictions
-        WHERE stock_symbol = ANY(%s)
-    """, conn, params=(active_symbols,))
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="pandas only supports SQLAlchemy connectable",
+            category=UserWarning,
+        )
+        df = pd.read_sql("""
+            SELECT stock_symbol, prediction_date,
+                   entry_price, target_price, stop_loss,
+                   trade_signal, probability_success
+            FROM predictions
+            WHERE stock_symbol = ANY(%s)
+        """, conn, params=(active_symbols,))
 
     conn.close()
 
@@ -335,7 +342,10 @@ def evaluate_filters_for_symbol(pred_row: dict,
         pred_age_days = None
     else:
         pred_age_days = (datetime.now().date() - pd.to_datetime(pred_date).date()).days
-    passes['age'] = (pred_age_days is not None) and (pred_age_days <= config.get('max_prediction_age_days', 3))
+    passes['age'] = (
+        pred_age_days is not None
+        and 0 <= pred_age_days <= config.get('max_prediction_age_days', 3)
+    )
     result['pred_age_days'] = pred_age_days
 
     # Signal strength filter (original signal must be acceptable)

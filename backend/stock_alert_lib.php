@@ -141,8 +141,6 @@ function stock_alert_ensure_schema($connection): void
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )",
-        "CREATE UNIQUE INDEX IF NOT EXISTS stock_alert_recipients_email_lower_uq
-            ON stock_alert_recipients (LOWER(email))",
         "CREATE TABLE IF NOT EXISTS stock_alert_settings (
             id SMALLINT PRIMARY KEY CHECK (id = 1),
             enabled BOOLEAN NOT NULL DEFAULT TRUE,

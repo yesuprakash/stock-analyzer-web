@@ -18,11 +18,15 @@ if BASE_DIR not in sys.path:
 # -------------------------------------------------
 # LOG LOCATION
 # -------------------------------------------------
-PUBLIC_HTML = os.path.abspath(os.path.join(BASE_DIR, "public_html"))
+PUBLIC_HTML = os.path.abspath(
+    os.path.join(BASE_DIR, "public_html")
+    if os.name == "nt"
+    else os.path.join(BASE_DIR, "..", "public_html")
+)
 LOG_DIR = os.path.join(PUBLIC_HTML, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 
-LOG_FILE = os.path.join(LOG_DIR, "near_entry_api.log")
+LOG_FILE = os.path.join(LOG_DIR, "market_correction_api.log")
 
 # CLEAR OLD LOG
 open(LOG_FILE, "w").close()
@@ -30,7 +34,7 @@ open(LOG_FILE, "w").close()
 # -------------------------------------------------
 # LOGGER
 # -------------------------------------------------
-logger = logging.getLogger("near_entry_api")
+logger = logging.getLogger("market_correction_api")
 logger.setLevel(logging.INFO)
 
 if not logger.handlers:

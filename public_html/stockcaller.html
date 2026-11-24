@@ -2,7 +2,7 @@
 <html>
 <head>
   <title>Stock Analyzer Control</title>
-   <style>
+  <style>
     body { font-family: Arial; }
     #logBox {
       width: 100%;
@@ -17,76 +17,208 @@
       overflow-y: scroll;
       border: 1px solid #444;
     }
-
-     .navbar{
-    background:#2c3e50;
-    overflow:hidden;
-}
-
-.navbar a{
-    float:left;
-    color:white;
-    text-align:center;
-    padding:14px 20px;
-    text-decoration:none;
-    font-size:16px;
-}
-
-.navbar a:hover{
-    background:#1abc9c;
-}
-
+    .navbar { background: #2c3e50; overflow: hidden; }
+    .navbar a {
+      float: left;
+      color: white;
+      text-align: center;
+      padding: 14px 20px;
+      text-decoration: none;
+      font-size: 16px;
+    }
+    .navbar a:hover { background: #1abc9c; }
+    #run-status { margin: 12px 0 6px; font-weight: 600; }
+    #run-status.running { color: #8a5a00; }
+    #run-status.success { color: #137333; }
+    #run-status.failure { color: #b3261e; }
+    #run-progress { display: block; width: 100%; height: 18px; }
   </style>
 </head>
 <body>
 
 <div class="navbar">
-    <a href="stockcaller.html">Stock Caller</a>
-    <a href="near_entry.html">Near Entry</a>
-    <a href="market_correction.html">Market Correction</a>
+  <a href="stockcaller.html">Stock Caller</a>
+  <a href="near_entry.html">Near Entry</a>
+  <a href="market_correction.html">Market Correction</a>
+  <a href="price_performance.html">Performance</a>
+  <a href="email_alerts.html">Email Alerts</a>
+  <a href="stock_master.html">Stock List</a>
 </div>
 
 <h2>Stock Analyzer</h2>
+<p>Sign in through <a href="stock_master.html">Stock List</a> or <a href="email_alerts.html">Email Alerts</a>, then return here and reload this page.</p>
 
-<button onclick="runAnalyzer()">Run Stock Analyzer</button>
-<button onclick="loadLog()">Refresh Log</button>
-<pre id="logBox">Logs will appear here...</pre>
+<button id="run-button" onclick="runAnalyzer()" disabled>Run Stock Analyzer</button>
+<button id="refresh-log-button" onclick="loadLog()" disabled>Refresh Log</button>
+<div id="run-status" role="status" aria-live="polite">Checking admin session...</div>
+<progress id="run-progress" max="100" hidden></progress>
+<pre id="logBox">Sign in to view analyzer logs.</pre>
 
 <script>
-const TOKEN = "LOCAL_STOCK_ANALYZER_RUN";
+const runButton = document.getElementById("run-button");
+const refreshLogButton = document.getElementById("refresh-log-button");
+const runStatus = document.getElementById("run-status");
+const runProgress = document.getElementById("run-progress");
+const logBox = document.getElementById("logBox");
+let csrfToken = "";
+let analyzerRunning = false;
+let analyzerStartedAt = 0;
+const maxRunTimeMs = 60 * 60 * 1000;
 
-function runAnalyzer() {
-  fetch(`run_analyzer.php?token=${TOKEN}`)
-    .then(res => res.text())
-    .then(msg => {
-      alert(msg);
-      setTimeout(loadLog, 1500); // auto-refresh after start
-    })
-    .catch(() => alert("Failed to start analyzer"));
+function setRunStatus(message, state) {
+  runStatus.textContent = message;
+  runStatus.className = state || "";
 }
 
-function loadLog() {
-  fetch(`view_log.php?token=${TOKEN}`)
-    .then(res => res.text())
-    .then(text => {
-      const box = document.getElementById("logBox");
-      box.textContent = text;
-      box.scrollTop = box.scrollHeight;
-    })
-    .catch(err => {
-      document.getElementById("logBox").textContent =
-        "Failed to load log.";
+async function fetchLog() {
+  const response = await fetch(`view_log.php?_=${Date.now()}`, {
+    cache: "no-store",
+    credentials: "same-origin"
+  });
+  if (!response.ok) {
+    const message = await response.text();
+    const error = new Error(message || `Log request failed (HTTP ${response.status}).`);
+    error.status = response.status;
+    throw error;
+  }
+
+  const text = await response.text();
+  logBox.textContent = text;
+  logBox.scrollTop = logBox.scrollHeight;
+  return text;
+}
+
+async function loadLog() {
+  try {
+    await fetchLog();
+  } catch (error) {
+    logBox.textContent = error.message || "Failed to load log.";
+    if (error.status === 401) {
+      csrfToken = "";
+      runButton.disabled = true;
+      refreshLogButton.disabled = true;
+      setRunStatus("Admin session expired. Sign in again and reload this page.", "failure");
+    }
+  }
+}
+
+async function initializeStockCaller() {
+  try {
+    const response = await fetch("run_analyzer.php?action=state", {
+      cache: "no-store",
+      credentials: "same-origin"
     });
-}
-</script>
+    const data = await response.json();
+    if (!response.ok || data.authenticated !== true || typeof data.csrf !== "string") {
+      runButton.disabled = true;
+      refreshLogButton.disabled = true;
+      setRunStatus("Sign in through Stock List or Email Alerts to run the analyzer.", "failure");
+      logBox.textContent = "Sign in to view analyzer logs.";
+      return;
+    }
 
-<script>
-function runAnalyzer() {
-  fetch('./run_analyzer.php?token=9f7c1d2a_StockAnalyzer_Run_2026!')
-    .then(res => res.text())
-    .then(msg => alert(msg))
-    .catch(err => alert('Failed to start analyzer'));
+    csrfToken = data.csrf;
+    runButton.disabled = false;
+    refreshLogButton.disabled = false;
+    setRunStatus("Ready. Click Run Stock Analyzer to start.");
+    await loadLog();
+  } catch (error) {
+    setRunStatus(`Could not check admin session: ${error.message}`, "failure");
+  }
 }
+
+function finishAnalyzer(success, message) {
+  analyzerRunning = false;
+  runButton.disabled = !csrfToken;
+  if (success) runProgress.value = 100;
+  setRunStatus(message, success ? "success" : "failure");
+}
+
+function updateRunProgress(logText) {
+  const totalMatch = logText.match(/Processing started for (\d+) stocks/);
+  const processed = (logText.match(/Processing stock:/g) || []).length;
+  if (!totalMatch) {
+    runProgress.removeAttribute("value");
+    setRunStatus("Starting analyzer and preparing stock data...", "running");
+    return;
+  }
+
+  const total = Number(totalMatch[1]);
+  runProgress.max = Math.max(total, 1);
+  runProgress.value = Math.min(processed, total);
+  setRunStatus(`Processing ${Math.min(processed, total)} of ${total} stocks...`, "running");
+}
+
+async function pollAnalyzer() {
+  if (!analyzerRunning) return;
+
+  try {
+    const logText = await fetchLog();
+    const completed = logText.match(/Processing completed\. Success=(\d+), Skipped=(\d+)/);
+    const exitCode = logText.match(/ANALYZER_EXIT_CODE=(\d+)/);
+
+    if (logText.includes("Delete old predictions failed:")) {
+      finishAnalyzer(false, "Analyzer could not clear old predictions. Check database permissions and the log.");
+    } else if (logText.includes("Failed to save summary to DB:")) {
+      finishAnalyzer(false, "Analyzer failed while saving the prediction summary. See the log.");
+    } else if (exitCode && Number(exitCode[1]) !== 0) {
+      finishAnalyzer(false, `Analyzer failed (exit code ${exitCode[1]}). See the log.`);
+    } else if (completed && logText.includes("Prediction summary saved to DB successfully.")) {
+      finishAnalyzer(
+        true,
+        `Completed successfully: ${completed[1]} stocks processed; ${completed[2]} skipped.`
+      );
+    } else if (exitCode) {
+      finishAnalyzer(false, "Analyzer ended without confirming the prediction summary. See the log.");
+    } else {
+      updateRunProgress(logText);
+    }
+  } catch (error) {
+    if (error.status === 401) {
+      analyzerRunning = false;
+      csrfToken = "";
+      runButton.disabled = true;
+      refreshLogButton.disabled = true;
+      setRunStatus("Admin session expired. Sign in again to view progress.", "failure");
+      return;
+    }
+    setRunStatus(`Analyzer is running; progress log unavailable: ${error.message}`, "running");
+  }
+
+  if (analyzerRunning && Date.now() - analyzerStartedAt >= maxRunTimeMs) {
+    finishAnalyzer(false, "Timed out waiting for the analyzer to finish. Check the log.");
+  }
+  if (analyzerRunning) window.setTimeout(pollAnalyzer, 2000);
+}
+
+async function runAnalyzer() {
+  if (analyzerRunning || !csrfToken) return;
+
+  analyzerRunning = true;
+  analyzerStartedAt = Date.now();
+  runButton.disabled = true;
+  runProgress.hidden = false;
+  runProgress.removeAttribute("value");
+  setRunStatus("Starting analyzer...", "running");
+
+  try {
+    const response = await fetch("run_analyzer.php?action=start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ csrf: csrfToken }),
+      cache: "no-store",
+      credentials: "same-origin"
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || `HTTP ${response.status}`);
+    setRunStatus(data.message || "Analyzer started. Waiting for progress...", "running");
+    pollAnalyzer();
+  } catch (error) {
+    finishAnalyzer(false, `Could not start analyzer: ${error.message}`);
+  }
+}
+
+initializeStockCaller();
 </script>
 
 </body>
