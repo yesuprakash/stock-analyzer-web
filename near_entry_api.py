@@ -50,6 +50,8 @@ config = {
     "ma_period": 20,
     "min_reward_risk": float(ARGS.get("min_reward_risk", 1.5)),
     "max_atr_pct": float(ARGS.get("max_atr_pct", 5.0)),
+    "min_volume_ratio": 1.2,
+    "max_gap_pct": 1.5,
 
     "use_rsi_filter": ARGS.get("use_rsi", "1") == "1",
     "use_ma_filter": ARGS.get("use_ma", "1") == "1",
@@ -61,7 +63,7 @@ config = {
 
     "allowed_signals": ["Strong Buy", "Buy", "Bullish"],
 
-    "period_for_history": "60d",
+    "period_for_history": "6mo",
     "auto_adjust": False,
     "latest_only": True,
     "actionable_only": ARGS.get("actionable_only", "0") == "1"

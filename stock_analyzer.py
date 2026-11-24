@@ -564,10 +564,14 @@ for stock in stocks:
         stop_loss = support * 0.98 if support is not None else None
         risk_reward = safe_run(lambda: round((target_price - entry_price) / (entry_price - stop_loss), 2) if None not in (target_price, entry_price, stop_loss) and (entry_price - stop_loss) != 0 else 0, default=0, name=f"{stock}-rr")
 
+        data_as_of = pd.Timestamp(data.index[-1])
+        if data_as_of.tzinfo is not None:
+            data_as_of = data_as_of.tz_convert("Asia/Kolkata")
+
         # Build DataFrame row safely
         new_row = pd.DataFrame([{
             "Stock Name": stock,
-            "Date": end_date.strftime("%Y-%m-%d"),
+            "Date": data_as_of.strftime("%Y-%m-%d"),
             "Prediction Term": prediction_term,
             "Forecast Horizon (Days)": forecast_days,
             "Days of Data Used": days_used,

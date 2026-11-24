@@ -1,9 +1,7 @@
 # backend/near_entry_core.py
 
 import os
-import sys
 import warnings
-from datetime import datetime
 from backend.logger import logger
         
 import pandas as pd
@@ -45,9 +43,7 @@ def find_series(df, candidates):
             if cand.lower() in str(col).lower():
                 return df[col]
 
-    # fallback numeric
-    nums = df.select_dtypes(include=[np.number]).columns
-    return df[nums[0]] if len(nums) else None
+    return None
 
 def _flatten_columns(df: pd.DataFrame) -> pd.DataFrame:
     new_cols = []
@@ -77,7 +73,8 @@ def _try_yf_history(symbol: str, period="60d", auto_adjust=False):
         if isinstance(df, pd.DataFrame) and not df.empty:
             df = _flatten_columns(df)
         return df
-    except Exception:
+    except Exception as error:
+        logger.warning("Yahoo Finance history request failed for %s: %s", symbol, error)
         return pd.DataFrame()
 
 
@@ -87,22 +84,22 @@ def fetch_price_df(
     auto_adjust=False,
     try_suffixes=True
 ):
-    df = _try_yf_history(symbol, period=period, auto_adjust=auto_adjust)
+    symbols_to_try = [symbol]
+    if try_suffixes:
+        base_symbol = symbol
+        if base_symbol.upper().endswith((".NS", ".BO")):
+            base_symbol = base_symbol[:-3]
+        symbols_to_try.extend([base_symbol + ".NS", base_symbol + ".BO"])
 
-    if (df is None or df.empty) and try_suffixes:
-        for sfx in [".NS", ".BO"]:
-            df2 = _try_yf_history(
-                symbol + sfx,
-                period=period,
-                auto_adjust=auto_adjust
-            )
-            if df2 is not None and not df2.empty:
-                df = df2
-                break
+    df = pd.DataFrame()
+    for candidate in dict.fromkeys(symbols_to_try):
+        df = _try_yf_history(candidate, period=period, auto_adjust=auto_adjust)
+        if df is not None and not df.empty:
+            break
 
     if isinstance(df, pd.DataFrame) and not df.empty:
         if hasattr(df.index, "tz") and df.index.tz is not None:
-            df.index = df.index.tz_convert(None)
+            df.index = df.index.tz_localize(None)
 
         df.index = pd.to_datetime(df.index).normalize()
 
@@ -185,10 +182,11 @@ def fetch_active_predictions(latest_only=True):
     df["prediction_date"] = pd.to_datetime(df["prediction_date"])
 
     if latest_only:
+        # Select a complete row; groupby.last() can fill null fields from older rows.
         df = (
-            df.sort_values(["stock_symbol", "prediction_date"])
-              .groupby("stock_symbol", as_index=False)
-              .last()
+            df.sort_values(["stock_symbol", "prediction_date"], kind="mergesort")
+              .drop_duplicates("stock_symbol", keep="last")
+              .reset_index(drop=True)
         )
 
     return df
@@ -214,7 +212,8 @@ def evaluate_filters_for_symbol(pred_row: dict,
         'rsi': None, 'ma20': None, 'macd_hist': None,
         'vol_ratio': None, 'reward_risk': None,
         'gap_pct': None, 'atr_pct': None,
-        'passes': {}, 'overall': False, 'suggested_action': None
+        'passes': {}, 'failed_filters': [], 'overall': False,
+        'suggested_action': None
     }
 
     if price_df is None or price_df.empty:
@@ -232,8 +231,28 @@ def evaluate_filters_for_symbol(pred_row: dict,
         result['suggested_action'] = 'no_close_series'
         return result
 
-    last_date = close_ser.index.max()
-    last_price = float(close_ser.loc[last_date])
+    close_ser = pd.to_numeric(close_ser, errors='coerce').dropna().sort_index()
+    if high_ser is not None:
+        high_ser = pd.to_numeric(high_ser, errors='coerce')
+    if low_ser is not None:
+        low_ser = pd.to_numeric(low_ser, errors='coerce')
+    if open_ser is not None:
+        open_ser = pd.to_numeric(open_ser, errors='coerce')
+    if vol_ser is not None:
+        vol_ser = pd.to_numeric(vol_ser, errors='coerce')
+    if close_ser.empty:
+        result['suggested_action'] = 'no_valid_close_price'
+        return result
+
+    last_date = close_ser.index[-1]
+    try:
+        last_price = float(close_ser.loc[last_date])
+    except (TypeError, ValueError):
+        result['suggested_action'] = 'no_valid_close_price'
+        return result
+    if not np.isfinite(last_price) or last_price <= 0:
+        result['suggested_action'] = 'no_valid_close_price'
+        return result
     result['last_price'] = last_price
     result['last_date'] = last_date
 
@@ -242,7 +261,11 @@ def evaluate_filters_for_symbol(pred_row: dict,
     stop = pred_row.get('stop_loss')
 
     # proximity
-    if entry is None or pd.isna(entry):
+    try:
+        entry = float(entry)
+    except (TypeError, ValueError):
+        entry = None
+    if entry is None or not np.isfinite(entry) or entry <= 0:
         result['suggested_action'] = 'no_entry_price'
         return result
 
@@ -251,11 +274,8 @@ def evaluate_filters_for_symbol(pred_row: dict,
     result['abs_diff'] = abs_diff
     result['pct_diff'] = pct_diff
 
-    # indicators require enough history — ensure at least 50 days
+    # Indicators are only considered actionable after at least 50 daily closes.
     lookback_needed = max(50, config.get('rsi_period', 14) * 3)
-    if len(close_ser) < lookback_needed:
-        # still proceed with what we have, but indicators may be NaN
-        pass
 
     # RSI
     try:
@@ -292,10 +312,10 @@ def evaluate_filters_for_symbol(pred_row: dict,
     # Reward / Risk ratio (for BUY context)
     try:
         if target is not None and stop is not None and not pd.isna(target) and not pd.isna(stop):
-            # For buy: reward = target - entry; risk = entry - stop (both positive expected)
-            reward = float(target) - float(entry)
-            risk = float(entry) - float(stop)
-            if risk <= 0:
+            # Use the current price so the ratio reflects a trade entered now.
+            reward = float(target) - last_price
+            risk = last_price - float(stop)
+            if not np.isfinite(reward) or not np.isfinite(risk) or reward <= 0 or risk <= 0:
                 rr = None
             else:
                 rr = reward / risk
@@ -338,15 +358,34 @@ def evaluate_filters_for_symbol(pred_row: dict,
 
     # Prediction age filter
     pred_date = pred_row.get('prediction_date')
-    if pd.isna(pred_date):
+    try:
+        prediction_day = pd.Timestamp(pred_date)
+        if pd.isna(prediction_day):
+            prediction_day = None
+        elif prediction_day.tzinfo is not None:
+            prediction_day = prediction_day.tz_convert('Asia/Kolkata')
+    except (TypeError, ValueError):
+        prediction_day = None
+
+    market_today = pd.Timestamp.now(tz='Asia/Kolkata').date()
+    if prediction_day is None:
         pred_age_days = None
     else:
-        pred_age_days = (datetime.now().date() - pd.to_datetime(pred_date).date()).days
+        pred_age_days = (market_today - prediction_day.date()).days
     passes['age'] = (
         pred_age_days is not None
         and 0 <= pred_age_days <= config.get('max_prediction_age_days', 3)
     )
     result['pred_age_days'] = pred_age_days
+    price_day = pd.Timestamp(last_date)
+    if price_day.tzinfo is not None:
+        price_day = price_day.tz_convert('Asia/Kolkata')
+    price_age_days = (market_today - price_day.date()).days
+    result['price_age_days'] = price_age_days
+    passes['price_data_age'] = (
+        0 <= price_age_days <= config.get('max_prediction_age_days', 3)
+    )
+    passes['history'] = len(close_ser) >= lookback_needed
 
     # Signal strength filter (original signal must be acceptable)
     orig_signal = pred_row.get('trade_signal')
@@ -378,48 +417,87 @@ def evaluate_filters_for_symbol(pred_row: dict,
     rr_ok = (result['reward_risk'] is not None) and (result['reward_risk'] >= config.get('min_reward_risk', 1.5))
     passes['reward_risk'] = rr_ok if config.get('use_rr_filter', True) else True
 
-    # Gap filter
-    gap_ok = True
+    # Missing metrics fail closed when their filter is enabled.
     gp = result.get('gap_pct')
-    if gp is None:
-        gap_ok = True
-    else:
-        gap_ok = abs(gp) <= config.get('max_gap_pct', 1.5)
+    gap_ok = (
+        gp is not None
+        and np.isfinite(gp)
+        and abs(gp) <= config.get('max_gap_pct', 1.5)
+    )
     passes['gap'] = gap_ok if config.get('use_gap_filter', True) else True
 
     # Volatility filter (ATR%)
-    atr_ok = True
     ap = result.get('atr_pct')
-    if ap is None:
-        atr_ok = True
-    else:
-        atr_ok = ap <= config.get('max_atr_pct', 5.0)
+    atr_ok = (
+        ap is not None
+        and np.isfinite(ap)
+        and ap <= config.get('max_atr_pct', 5.0)
+    )
     passes['volatility'] = atr_ok if config.get('use_volatility_filter', True) else True
 
     result['passes'] = passes
-    # overall: all enabled filters must pass
-    overall = all(v for v in passes.values())
-    result['overall'] = overall
+    prediction_age_reason = (
+        "Prediction date is missing"
+        if pred_age_days is None
+        else "Prediction date is in the future"
+        if pred_age_days < 0
+        else f"Prediction is {pred_age_days} days old"
+    )
+    price_age_reason = (
+        "Price data date is in the future"
+        if price_age_days < 0
+        else f"Price data is {price_age_days} days old"
+    )
+    signal_text = (
+        str(orig_signal)
+        if orig_signal is not None and not pd.isna(orig_signal)
+        else "unavailable"
+    )
 
-    # suggested_action
-    if not passes['age']:
-        suggested_action = 'SKIP (prediction too old)'
-    elif not passes['signal_strength']:
-        suggested_action = 'SKIP (weak original signal)'
-    elif not passes['ma20'] or not passes['rsi'] or not passes['macd']:
-        suggested_action = 'SKIP (trend not confirmed)'
-    elif not passes['volume']:
-        suggested_action = 'SKIP (low volume)'
-    elif not passes['reward_risk']:
-        suggested_action = 'SKIP (reward-risk too low)'
-    elif not passes['gap']:
-        suggested_action = 'SKIP (gap too large)'
-    elif not passes['volatility']:
-        suggested_action = 'SKIP (high volatility)'
+    def metric_text(value, suffix=""):
+        if value is None or not np.isfinite(value):
+            return "unavailable"
+        return f"{value:.2f}{suffix}"
+
+    failure_reasons = {
+        'age': f"{prediction_age_reason} (max {config.get('max_prediction_age_days', 3)} days)",
+        'price_data_age': f"{price_age_reason} (max {config.get('max_prediction_age_days', 3)} days)",
+        'history': f"Insufficient price history (need {lookback_needed} sessions)",
+        'signal_strength': f"Original signal {signal_text} is not Buy/Bullish",
+        'ma20': (
+            f"Price {metric_text(last_price)} is not above MA20 "
+            f"{metric_text(result['ma20'])}"
+        ),
+        'rsi': (
+            f"RSI {metric_text(result['rsi'])} is below "
+            f"{config.get('rsi_min', 45)} or unavailable"
+        ),
+        'macd': f"MACD histogram {metric_text(result['macd_hist'])} is negative or unavailable",
+        'volume': (
+            f"Volume ratio {metric_text(result['vol_ratio'])} is below "
+            f"{config.get('min_volume_ratio', 1.2)} or unavailable"
+        ),
+        'reward_risk': (
+            f"Current-price reward/risk {metric_text(result['reward_risk'])} is below "
+            f"{config.get('min_reward_risk', 1.5)} or unavailable"
+        ),
+        'gap': (
+            f"Gap {metric_text(gp, '%')} exceeds {config.get('max_gap_pct', 1.5)}% "
+            "or is unavailable"
+        ),
+        'volatility': (
+            f"ATR {metric_text(ap, '%')} exceeds {config.get('max_atr_pct', 5.0)}% "
+            "or is unavailable"
+        ),
+    }
+    result['failed_filters'] = [
+        failure_reasons[name] for name, passed in passes.items() if not passed
+    ]
+    result['overall'] = not result['failed_filters']
+    if result['failed_filters']:
+        result['suggested_action'] = f"SKIP ({result['failed_filters'][0]})"
     else:
-        suggested_action = 'ACTIONABLE (passes all filters)'
-
-    result['suggested_action'] = suggested_action
+        result['suggested_action'] = 'ACTIONABLE (passes all filters)'
 
     return result
 
@@ -456,11 +534,18 @@ def run_near_entry_logic(config):
         last_price = eval_res.get("last_price")
         pct_diff = eval_res.get("pct_diff")
         abs_diff = eval_res.get("abs_diff")
+        if pct_diff is None:
+            logger.warning(
+                "Omitting %s from Near Entry because its price or entry could not be evaluated: %s",
+                r.stock_symbol,
+                eval_res.get("suggested_action"),
+            )
+            continue
 
         # ----- PROXIMITY (EXACT STREAMLIT LOGIC)
         proximity_ok = False
 
-        if pct_diff is not None and abs(pct_diff) <= config["min_pct_tolerance"]:
+        if pct_diff is not None and np.isfinite(pct_diff) and abs(pct_diff) <= config["min_pct_tolerance"]:
             proximity_ok = True
 
         if config["min_abs_tolerance"] > 0:
@@ -493,7 +578,12 @@ def run_near_entry_logic(config):
             "reward_risk": eval_res.get("reward_risk"),
             "gap_pct": eval_res.get("gap_pct"),
             "atr_pct": eval_res.get("atr_pct"),
-            "probability": r.probability_success
+            "probability": r.probability_success,
+            "price_data_date": (
+                eval_res["last_date"].strftime("%Y-%m-%d")
+                if eval_res.get("last_date") is not None else None
+            ),
+            "failed_filters": eval_res.get("failed_filters", []),
         })
 
     # ----- EXACT SAME SORTING AS OLD SCREEN

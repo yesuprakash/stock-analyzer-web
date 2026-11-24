@@ -46,6 +46,8 @@ th {
   color: #777;
 }
 
+#table-wrap { overflow-x: auto; }
+
  .navbar{
     background:#2c3e50;
     overflow:hidden;
@@ -79,10 +81,10 @@ th {
 
 <div class="filters">
 
-  <label>Max Prediction Age (days)</label>
+  <label>Max Prediction / Price Data Age (calendar days)</label>
   <input type="number" id="max_age" value="3">
 
-  <label>Max % Distance From Entry</label>
+  <label>Max % Distance From Entry (±)</label>
   <input type="number" id="pct_tol" step="0.1" value="2.0">
 
   <label>RSI Min</label>
@@ -114,22 +116,33 @@ th {
 
 </div>
 
+<p>
+  Entry distance is the first filter; prices above or below entry qualify within the selected range.
+  RSI, MA20, MACD, volume ratio (minimum 1.2), reward/risk, gap (maximum 1.5%), and ATR checks determine actionability.
+  Reward/risk is recalculated from the last price. The analyzer probability score is not an actionability filter.
+  Prices come from Yahoo Finance daily bars and are not guaranteed live or complete during market hours.
+</p>
+
+<div id="table-wrap">
 <table id="tbl">
   <thead>
     <tr>
       <th>Stock</th>
+      <th>Price Data Date</th>
       <th>Entry</th>
       <th>Last Price</th>
       <th>% Diff</th>
       <th>RSI</th>
       <th>Reward / Risk</th>
+      <th>Failed Checks</th>
       <th>Suggested Action</th>
     </tr>
   </thead>
   <tbody>
-    <tr><td colspan="7" class="loading">Click Apply to load results.</td></tr>
+    <tr><td colspan="9" class="loading">Click Apply to load results.</td></tr>
   </tbody>
 </table>
+</div>
 
 <script>
 
@@ -139,17 +152,25 @@ function renderTable(data) {
   tbody.innerHTML = "";
 
   if (!data || data.length === 0) {
-    tbody.innerHTML = `<tr>
-        <td colspan="7" class="loading">No results found</td>
-      </tr>`;
+    const row = document.createElement("tr");
+    const cell = document.createElement("td");
+    cell.colSpan = 9;
+    cell.className = "loading";
+    const tolerance = document.getElementById("pct_tol").value;
+    cell.textContent = document.getElementById("actionable_only").checked
+      ? `No stock within ±${tolerance}% of entry passed all enabled checks.`
+      : `No stock with valid market data was within ±${tolerance}% of its entry price.`;
+    row.appendChild(cell);
+    tbody.appendChild(row);
     return;
   }
 
   data.forEach(row => {
 
-    const pct = row.pct_diff !== null
-        ? row.pct_diff.toFixed(2)
-        : "-";
+    const format = value => value !== null && value !== undefined && Number.isFinite(Number(value))
+      ? Number(value).toFixed(2)
+      : "-";
+    const pct = format(row.pct_diff);
 
     const pctClass =
         row.pct_diff > 0 ? "positive" :
@@ -157,16 +178,26 @@ function renderTable(data) {
         "neutral";
 
     const tr = document.createElement("tr");
-
-    tr.innerHTML = `
-      <td>${row.stock_symbol}</td>
-      <td>${row.entry_price ?? "-"}</td>
-      <td>${row.last_price ?? "-"}</td>
-      <td class="${pctClass}">${pct}</td>
-      <td>${row.rsi ?? "-"}</td>
-      <td>${row.reward_risk ?? "-"}</td>
-      <td>${row.suggested_action ?? "-"}</td>
-    `;
+    const failedChecks = Array.isArray(row.failed_filters) && row.failed_filters.length
+      ? row.failed_filters.join("; ")
+      : row.passes_all_filters ? "None" : "Unavailable";
+    const values = [
+      row.stock_symbol ?? "-",
+      row.price_data_date ?? "-",
+      format(row.entry_price),
+      format(row.last_price),
+      pct,
+      format(row.rsi),
+      format(row.reward_risk),
+      failedChecks,
+      row.suggested_action ?? "-"
+    ];
+    values.forEach((value, index) => {
+      const cell = document.createElement("td");
+      cell.textContent = String(value);
+      if (index === 4) cell.className = pctClass;
+      tr.appendChild(cell);
+    });
 
     tbody.appendChild(tr);
   });
@@ -191,7 +222,7 @@ function loadNearEntry() {
   });
 
   const tbody = document.querySelector("#tbl tbody");
-  tbody.innerHTML = "<tr><td colspan='7' class='loading'>Loading...</td></tr>";
+  tbody.innerHTML = "<tr><td colspan='9' class='loading'>Loading...</td></tr>";
   const applyButton = document.getElementById("apply-button");
   applyButton.disabled = true;
 
@@ -212,7 +243,7 @@ function loadNearEntry() {
       tbody.innerHTML = "";
       const row = document.createElement("tr");
       const cell = document.createElement("td");
-      cell.colSpan = 7;
+      cell.colSpan = 9;
       cell.className = "loading";
       cell.textContent = `Error loading data: ${err.message}`;
       row.appendChild(cell);
