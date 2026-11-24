@@ -17,20 +17,40 @@ def safe_float(x):
 # ------------------------
 # PRICE FETCH
 # ------------------------
-def fetch_price_df(symbol, period="120d"):
+def fetch_price_df(symbol, period="120d", auto_adjust=False):
     try:
         df = yf.download(
             symbol,
             period=period,
             progress=False,
-            auto_adjust=True
+            auto_adjust=auto_adjust
         )
-        if df is None or df.empty:
-            return pd.DataFrame()
-        df.index = pd.to_datetime(df.index).normalize()
-        return df
+        return normalize_price_df(df)
     except Exception:
         return pd.DataFrame()
+
+
+def normalize_price_df(df):
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    df = df.copy()
+    if isinstance(df.columns, pd.MultiIndex):
+        price_columns = {"Open", "High", "Low", "Close", "Adj Close", "Volume"}
+        flattened = []
+        for column in df.columns:
+            parts = [str(part) for part in column if part is not None]
+            price_column = next(
+                (part for part in parts if part in price_columns),
+                parts[0] if parts else "",
+            )
+            flattened.append(price_column)
+        df.columns = flattened
+        df = df.loc[:, ~df.columns.duplicated(keep="first")]
+    if hasattr(df.index, "tz") and df.index.tz is not None:
+        df.index = df.index.tz_localize(None)
+    df.index = pd.to_datetime(df.index).normalize()
+    return df
 
 # ------------------------
 # INDICATORS

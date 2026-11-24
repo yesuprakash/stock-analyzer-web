@@ -57,12 +57,14 @@
     .neutral  { color: #444; }
 
     .navbar{
+    display:flex;
     background:#2c3e50;
-    overflow:hidden;
+    overflow-x:auto;
+    white-space:nowrap;
 }
 
 .navbar a{
-    float:left;
+    flex:0 0 auto;
     color:white;
     text-align:center;
     padding:14px 20px;
@@ -87,6 +89,7 @@
     <a href="price_performance.html">Performance</a>
     <a href="email_alerts.html">Email Alerts</a>
     <a href="stock_master.html">Stock List</a>
+    <a href="strategy_reference.html">Screen Logic</a>
 </div>
 
 <h2>📉 Market Correction Dashboard</h2>
@@ -94,7 +97,7 @@
 <div class="filters">
   <label>
   <input type="checkbox" id="skip_filters">
-  Skip all filters
+  Skip strategy thresholds
 </label>
   <label>
     Window:
@@ -110,12 +113,17 @@
 
   <label>
     Min Corr %:
-    <input type="number" id="min_corr" value="-8" step="0.5">
+    <input type="number" id="min_corr" value="-20" step="0.5">
   </label>
 
   <label>
     Max Corr %:
-    <input type="number" id="max_corr" value="-20" step="0.5">
+    <input type="number" id="max_corr" value="-8" step="0.5">
+  </label>
+
+  <label>
+    Max data age (calendar days):
+    <input type="number" id="max_data_age" value="5" min="0" max="30">
   </label>
 
   <label>
@@ -136,21 +144,29 @@
   <button onclick="loadData()">Apply</button>
 </div>
 
+<p>
+  The correction range is measured from the highest close in the selected window.
+  The second drawdown is measured from the highest daily high in that window, not today's intraday high.
+  Skip strategy thresholds still requires fresh market data and a prediction row.
+</p>
+
 <table id="tbl">
   <thead>
     <tr>
       <th>Stock</th>
+      <th>Prediction Date</th>
+      <th>Price Data Date</th>
       <th>Last Price</th>
       <th>Correction % (Close)</th>
-      <th>Correction % (Intraday)</th>
+      <th>Drawdown from Window High</th>
       <th>RSI</th>
       <th>ATR %</th>
-      <th>Reward / Risk</th>
+      <th>R/R at Current Price</th>
       <th>Signal</th>
     </tr>
   </thead>
   <tbody>
-    <tr><td colspan="8">Click Apply to load data.</td></tr>
+    <tr><td colspan="10">Click Apply to load data.</td></tr>
   </tbody>
 </table>
 
@@ -174,60 +190,86 @@ Loading logs...
 
 <script>
 function loadData() {
-  const windowVal = document.getElementById("window").value;
-  const minCorr  = document.getElementById("min_corr").value;
-  const maxCorr  = document.getElementById("max_corr").value;
-  const rsiVal   = document.getElementById("rsi").value;
-  const atrVal   = document.getElementById("atr").value;
-  const rrVal    = document.getElementById("rr").value;
-  const skipAll  = document.getElementById("skip_filters").checked ? 1 : 0;
-
   const tbody = document.querySelector("#tbl tbody");
-  tbody.innerHTML = "<tr><td colspan='8'>Loading...</td></tr>";
+  tbody.innerHTML = "<tr><td colspan='10'>Loading...</td></tr>";
+  const params = new URLSearchParams({
+    window: document.getElementById("window").value,
+    min_corr: document.getElementById("min_corr").value,
+    max_corr: document.getElementById("max_corr").value,
+    rsi_min: document.getElementById("rsi").value,
+    max_atr: document.getElementById("atr").value,
+    min_rr: document.getElementById("rr").value,
+    skip_filters: document.getElementById("skip_filters").checked ? 1 : 0,
+    max_data_age_days: document.getElementById("max_data_age").value
+  });
 
-  fetch(`market_correction.php?window=${windowVal}` +
-      `&min_corr=${minCorr}` +
-      `&max_corr=${maxCorr}` +
-      `&rsi_min=${rsiVal}` +
-      `&max_atr=${atrVal}` +
-      `&min_rr=${rrVal}` +
-      `&skip_filters=${skipAll}`)
-    .then(res => {
-      if (!res.ok) throw new Error("HTTP " + res.status);
-      return res.json();
+  fetch(`market_correction.php?${params.toString()}`)
+    .then(async response => {
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.details || data.error || `HTTP ${response.status}`);
+      }
+      if (!Array.isArray(data)) {
+        throw new Error(data.error || "Unexpected response from Market Correction.");
+      }
+      return data;
     })
     .then(data => {
       tbody.innerHTML = "";
-
-      if (!data || data.length === 0) {
-        tbody.innerHTML = "<tr><td colspan='8'>No stocks qualify</td></tr>";
+      if (data.length === 0) {
+        const row = document.createElement("tr");
+        const cell = document.createElement("td");
+        cell.colSpan = 10;
+        cell.textContent = "No stocks qualify with the current data and filters.";
+        row.appendChild(cell);
+        tbody.appendChild(row);
         return;
       }
 
-      data.forEach(r => {
-        const corrClass = r.corr_close < -15 ? "negative" : "neutral";
-        const signalClass =
-          r.signal.includes("Buy") ? "positive" :
-          r.signal.includes("Sell") ? "negative" : "neutral";
+      const format = (value, suffix = "") =>
+        value !== null && value !== undefined && Number.isFinite(Number(value))
+          ? `${Number(value).toFixed(2)}${suffix}`
+          : "-";
 
-        tbody.innerHTML += `
-          <tr>
-            <td>${r.stock}</td>
-            <td>${r.last_price}</td>
-            <td class="${corrClass}">${r.corr_close}%</td>
-            <td class="${corrClass}">${r.corr_intraday}%</td>
-            <td>${r.rsi}</td>
-            <td>${r.atr_pct}%</td>
-            <td>${r.rr}</td>
-            <td class="${signalClass}">${r.signal}</td>
-          </tr>`;
+      data.forEach(item => {
+        const row = document.createElement("tr");
+        const values = [
+          item.stock,
+          item.prediction_date,
+          item.price_data_date,
+          format(item.last_price),
+          format(item.corr_close, "%"),
+          format(item.corr_from_high, "%"),
+          format(item.rsi),
+          format(item.atr_pct, "%"),
+          format(item.rr),
+          item.signal
+        ];
+        values.forEach((value, index) => {
+          const cell = document.createElement("td");
+          cell.textContent = value === null || value === undefined ? "-" : String(value);
+          if (index === 4 && item.corr_close < 0) cell.className = "negative";
+          if (index === 5 && item.corr_from_high < 0) cell.className = "negative";
+          if (index === 9) {
+            cell.className = String(item.signal || "").includes("Buy")
+              ? "positive"
+              : String(item.signal || "").includes("Sell") ? "negative" : "neutral";
+          }
+          row.appendChild(cell);
+        });
+        tbody.appendChild(row);
       });
     })
-    .catch(err => {
-      console.error(err);
-      tbody.innerHTML = "<tr><td colspan='8'>Error loading data</td></tr>";
+    .catch(error => {
+      console.error(error);
+      tbody.innerHTML = "";
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 10;
+      cell.textContent = `Error loading data: ${error.message}`;
+      row.appendChild(cell);
+      tbody.appendChild(row);
     });
-    
 }
 
 </script>

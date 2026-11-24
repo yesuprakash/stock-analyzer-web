@@ -252,3 +252,54 @@ The user ran the analyzer on the server and supplied a log showing `permission d
 The Stock Caller page and its run/log endpoints now use the existing management login session shared by Stock List and Email Alerts. The page obtains a session CSRF token from the run endpoint; starting the analyzer requires an authenticated POST with that token, while log reads also require the admin session. The page directs users to sign in through either management screen before returning to Stock Caller. No launcher credential is embedded in the HTML or PHP endpoints.
 
 PHP lint and Stock Caller JavaScript syntax checks passed locally. Server deployment and a post-deployment run are not confirmed. Continue to preserve the server `.env`; do not share or reuse any previously exposed launcher credential.
+
+## 2026-11-24 Market Correction, historical backtest, and logic reference
+
+### Market Correction logic and display
+
+The local Market Correction implementation now:
+
+- Correctly applies the selected correction band to the latest close versus the highest close in the selected session window. Defaults are -20% to -8%.
+- Uses unadjusted Yahoo Finance prices to align with the analyzer's generated target/stop levels and normalizes Yahoo Finance multi-level columns and exchange-date indexes.
+- Selects the latest prediction as one complete row per active symbol, checks prediction and price-data age, and displays both dates.
+- Recalculates reward/risk from the latest price versus the saved target and stop. Missing or invalid metrics fail the normal strategy filters.
+- Clarifies that the second drawdown is from the highest daily high across the window, not today's intraday high. This is informational; the correction filter uses closes.
+- Renames “Skip all filters” to “Skip strategy thresholds.” This bypasses correction, RSI, MACD, ATR, and reward/risk thresholds, but not freshness and valid price-history requirements.
+- Adds a configurable maximum data age (default 5 calendar days), explicit request errors, and safer text rendering in the browser.
+
+The PHP endpoint validates numeric filters and passes the data-age setting to Python. Python logging is initialized only when the script runs directly, so importing its logic in tests does not clear the production log.
+
+### Historical Market Correction backtest
+
+`backend/market_correction_backtest.py` was added as a command-line historical test. The user confirmed these execution assumptions:
+
+- Evaluate the screen on a session close; enter at the following session's open.
+- Hold no longer than 15 trading sessions.
+- If stop and target are both touched on one daily bar, count the stop first.
+- Compare round-trip transaction-cost assumptions at 0%, 0.1%, 0.2%, and 0.3% by default.
+
+The backtest rebuilds the Market Correction thresholds from daily OHLC history and writes individual trades to CSV. It uses today's active stock list unless symbols are specified, so historical-universe survivorship bias remains; historical membership is not retained. A one-symbol smoke run for GAIL.NS over 2024 Q1 completed with no qualifying trades, which validates execution but is not a meaningful performance evaluation.
+
+Example:
+
+`.\venv\Scripts\python.exe backend\market_correction_backtest.py --start 2022-01-01 --end 2024-12-31 --symbols GAIL.NS --output .\market_correction_trades.csv`
+
+### Screen Logic reference and deployment archive
+
+`public_html/strategy_reference.html` was added with business-language descriptions of Near Entry and Market Correction. A “Screen Logic” link now appears in all six existing HTML-page menus; the reference page also includes the shared navigation.
+
+The deployment archive is `D:\stock project\server files\stock-analyzer-deploy.zip`. Its paths match the server's sibling-directory layout:
+
+- `stock_analyzer/backend/market_correction_api.py`
+- `stock_analyzer/backend/market_utils.py`
+- Required `public_html/` endpoint and HTML files, including the new `strategy_reference.html`
+
+The archive excludes `.env`, the virtual environment, tests, and the optional historical backtest script. Extracting directly into `/home/bhavat5` would overwrite the included live files; use a staging directory to inspect it first, then copy files into `/home/bhavat5/stock_analyzer/backend/` and `/home/bhavat5/public_html/`.
+
+The updated archive was copied to the server-files collection and verified by SHA-256. These latest code and documentation changes remain local; the user plans to deploy and verify them. No production deployment is confirmed.
+
+### Validation
+
+- All 13 Python unit tests passed.
+- PHP lint, Python compilation, inline JavaScript syntax, and `git diff --check` passed.
+- The Screen Logic link was verified on all seven HTML pages (six existing pages plus the reference page).

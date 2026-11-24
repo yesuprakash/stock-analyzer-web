@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Screen Logic Reference</title>
+  <style>
+    body { font-family: Segoe UI, Arial, sans-serif; margin: 0; padding: 16px; color: #222; line-height: 1.55; }
+    .navbar { display: flex; overflow-x: auto; white-space: nowrap; background: #2c3e50; margin: -16px -16px 18px; }
+    .navbar a { flex: 0 0 auto; color: white; text-decoration: none; padding: 14px 16px; }
+    .navbar a:hover { background: #1abc9c; }
+    h1 { margin: 12px 0 6px; }
+    h2 { margin: 0 0 8px; }
+    .intro, .note { color: #555; }
+    .screen { margin: 18px 0; padding: 16px; border: 1px solid #ddd; border-radius: 6px; }
+    .screen h3 { margin: 14px 0 4px; }
+    ul { margin-top: 6px; }
+    .defaults { color: #444; }
+    @media (max-width: 600px) {
+      body { padding: 10px; }
+      .navbar { margin: -10px -10px 14px; }
+      .navbar a { padding: 12px; font-size: 13px; }
+      .screen { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <nav class="navbar" aria-label="Main navigation">
+    <a href="stockcaller.html">Stock Caller</a>
+    <a href="near_entry.html">Near Entry</a>
+    <a href="market_correction.html">Market Correction</a>
+    <a href="price_performance.html">Performance</a>
+    <a href="email_alerts.html">Email Alerts</a>
+    <a href="stock_master.html">Stock List</a>
+    <a href="strategy_reference.html" aria-current="page">Screen Logic</a>
+  </nav>
+
+  <h1>Screen Logic Reference</h1>
+  <p class="intro">
+    This page explains the business rules used to shortlist stocks. A screen result is a research aid,
+    not a promise of performance or a recommendation to trade. Prices are sourced from daily market
+    data and may be delayed or incomplete during market hours.
+  </p>
+
+  <section class="screen" id="near-entry">
+    <h2>Near Entry</h2>
+    <p>
+      Near Entry watches the latest saved prediction for each active stock and finds cases where the
+      latest market price is close to that prediction's entry price.
+    </p>
+
+    <h3>1. Near-entry shortlist</h3>
+    <ul>
+      <li>
+        The latest price must be within the selected percentage tolerance of the saved entry price.
+        The default is within 2% either above or below entry.
+      </li>
+      <li>
+        The percentage difference is measured relative to the entry price. The screen does not require
+        price to approach entry from only one direction.
+      </li>
+      <li>
+        Stocks outside this price range are not shown. With “Show Only Actionable” off, stocks inside
+        the range can still appear even when they fail one or more actionability checks.
+      </li>
+    </ul>
+
+    <h3>2. Actionability checks</h3>
+    <p class="defaults">Default thresholds and requirements:</p>
+    <ul>
+      <li>The prediction and price data must each be no more than 3 calendar days old.</li>
+      <li>At least 50 daily closing prices must be available.</li>
+      <li>The saved prediction signal must be Strong Buy, Buy, or Bullish.</li>
+      <li>RSI must be at least 45, price must be above its 20-day moving average, and MACD histogram must be non-negative.</li>
+      <li>Current volume must be at least 1.2 times its recent five-session average.</li>
+      <li>
+        Reward-to-risk is recalculated from the latest price and the prediction's target and stop.
+        Both potential reward and risk must be positive, and the ratio must be at least 1.5.
+      </li>
+      <li>The opening price gap from the previous close must be no more than 1.5% in either direction.</li>
+      <li>Average True Range (ATR) must be no more than 5% of the latest price.</li>
+    </ul>
+    <p>
+      RSI, moving-average, and MACD checks can be switched off individually. Volume, reward-to-risk,
+      gap, volatility, signal, age, and minimum-history checks remain required for an actionable result.
+      The prediction probability score is displayed as information and does not decide actionability.
+    </p>
+    <p>
+      “Show Only Actionable” filters the near-entry shortlist to stocks that pass every enabled
+      actionability check. Otherwise, qualifying near-entry stocks are shown with their failed checks.
+    </p>
+  </section>
+
+  <section class="screen" id="market-correction">
+    <h2>Market Correction</h2>
+    <p>
+      Market Correction looks for active stocks whose latest close has fallen into a selected range
+      below a recent high, while checking momentum, volatility, and the available target/stop levels.
+      It evaluates the most recent saved prediction for each active stock.
+    </p>
+
+    <h3>1. Correction range</h3>
+    <ul>
+      <li>The default measurement window is 30 trading sessions; other available windows range from 5 to 60 sessions.</li>
+      <li>
+        The correction percentage compares the latest close with the highest closing price in that
+        window. The default accepted range is from 20% below to 8% below that high.
+      </li>
+      <li>
+        The “Drawdown from Window High” value compares the latest close with the highest daily high
+        in the same window. It is descriptive and is not the correction-range filter.
+      </li>
+    </ul>
+
+    <h3>2. Strategy thresholds</h3>
+    <ul>
+      <li>RSI must be at least 40.</li>
+      <li>MACD histogram must be non-negative.</li>
+      <li>ATR must be no more than 5.5% of the latest price.</li>
+      <li>
+        Reward-to-risk uses the latest price and the saved prediction's target and stop. Potential
+        reward and risk must both be positive, and the ratio must be at least 1.8.
+      </li>
+      <li>The prediction and price data must each be no more than 5 calendar days old.</li>
+    </ul>
+    <p>
+      The prediction signal is shown in the results but is not itself a pass/fail threshold on this
+      screen. Target and stop levels come from the latest saved prediction.
+    </p>
+    <p>
+      “Skip strategy thresholds” bypasses the correction, RSI, MACD, ATR, and reward-to-risk
+      thresholds. It does not bypass the need for a recent prediction, fresh market data, or enough
+      valid price history to calculate the selected window.
+    </p>
+  </section>
+
+  <p class="note">
+    Both screens depend on historical daily prices and saved prediction levels. Intraday prices,
+    execution slippage, liquidity, and future market events can differ from what the screens show.
+  </p>
+</body>
+</html>
